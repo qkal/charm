@@ -32,7 +32,8 @@ beforeAll(() => {
 
   // Symlink node_modules (needed for better-sqlite3, too large to copy)
   if (existsSync(join(PROJECT_ROOT, "node_modules"))) {
-    symlinkSync(join(PROJECT_ROOT, "node_modules"), join(fakePluginDir, "node_modules"));
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    symlinkSync(join(PROJECT_ROOT, "node_modules"), join(fakePluginDir, "node_modules"), linkType);
   }
 
   // Copy package.json (needed for module resolution)

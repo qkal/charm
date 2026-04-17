@@ -1076,34 +1076,38 @@ describe("ctx_upgrade tool: inline fallback for missing CLI", () => {
     resolve(__dirname, "../../src/server.ts"),
     "utf-8",
   );
+  const diagnosticsSrc = readFileSync(
+    resolve(__dirname, "../../src/server/diagnostics.ts"),
+    "utf-8",
+  );
 
   test("tries cli.bundle.mjs first", () => {
-    expect(serverSrc).toContain("cli.bundle.mjs");
-    // The bundle path should be checked before fallback
-    expect(serverSrc).toMatch(/existsSync\(bundlePath\)/);
+    expect(serverSrc).toContain("buildUpgradeMessage");
+    expect(diagnosticsSrc).toContain("cli.bundle.mjs");
+    expect(diagnosticsSrc).toMatch(/existsSync\(bundlePath\)/);
   });
 
   test("tries build/cli.js second", () => {
-    expect(serverSrc).toContain('resolve(pluginRoot, "build", "cli.js")');
+    expect(diagnosticsSrc).toContain('resolve(pluginRoot, "build", "cli.js")');
   });
 
   test("contains inline fallback with git clone when neither CLI file exists", () => {
     // The fallback must generate an inline script with git clone via execFileSync
-    expect(serverSrc).toMatch(/git.*clone.*--depth.*1/);
+    expect(diagnosticsSrc).toMatch(/git.*clone.*--depth.*1/);
     // The inline script is written to a temp .mjs file
-    expect(serverSrc).toMatch(/\.ctx-upgrade-inline\.mjs/);
+    expect(diagnosticsSrc).toMatch(/\.ctx-upgrade-inline\.mjs/);
   });
 
   test("inline fallback copies key files to plugin root", () => {
     // The inline script must copy build artifacts back
-    expect(serverSrc).toMatch(/server\.bundle\.mjs/);
-    expect(serverSrc).toMatch(/cli\.bundle\.mjs/);
-    expect(serverSrc).toMatch(/npm.*install/);
+    expect(diagnosticsSrc).toMatch(/server\.bundle\.mjs/);
+    expect(diagnosticsSrc).toMatch(/cli\.bundle\.mjs/);
+    expect(diagnosticsSrc).toMatch(/npm.*install/);
   });
 
   test("fallback only triggers when neither CLI file exists", () => {
     // There should be an else/fallback branch after checking both paths
-    expect(serverSrc).toMatch(/existsSync\(fallbackPath\)/);
+    expect(diagnosticsSrc).toMatch(/existsSync\(fallbackPath\)/);
   });
 });
 

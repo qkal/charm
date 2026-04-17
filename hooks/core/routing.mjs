@@ -96,8 +96,17 @@ let security = null;
 export async function initSecurity(buildDir) {
   try {
     const { pathToFileURL } = await import("node:url");
-    const secPath = (await import("node:path")).resolve(buildDir, "security.js");
-    security = await import(pathToFileURL(secPath).href);
+    const { resolve } = await import("node:path");
+    const candidates = [
+      resolve(buildDir, "security.js"),
+      resolve(buildDir, "..", "hooks", "security.bundle.mjs"),
+    ];
+
+    for (const secPath of candidates) {
+      if (!existsSync(secPath)) continue;
+      security = await import(pathToFileURL(secPath).href);
+      return;
+    }
   } catch { /* not available */ }
 }
 

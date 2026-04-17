@@ -1,5 +1,6 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { basename } from "node:path";
 
 export type Language =
   | "javascript"
@@ -37,18 +38,64 @@ export interface RuntimeMap {
 
 const isWindows = process.platform === "win32";
 
-function commandExists(cmd: string): boolean {
+function listCommandCandidates(cmd: string): string[] {
+  const candidates = new Set<string>([cmd]);
+
+  if (isWindows) {
+    try {
+      const result = execFileSync("where.exe", [cmd], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      });
+      for (const line of result.split(/\r?\n/).map((p) => p.trim()).filter(Boolean)) {
+        candidates.add(line);
+      }
+    } catch {
+      // Best effort — raw command name stays as fallback.
+    }
+  } else {
+    try {
+      const result = execFileSync("which", [cmd], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 5000,
+      }).trim();
+      if (result) candidates.add(result);
+    } catch {
+      // Best effort — raw command name stays as fallback.
+    }
+  }
+
+  return [...candidates];
+}
+
+function canExecute(command: string, args: string[] = ["--version"]): boolean {
   try {
-    const check = isWindows ? `where ${cmd}` : `command -v ${cmd}`;
-    execSync(check, { stdio: "pipe" });
+    execFileSync(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 5000,
+    });
     return true;
   } catch {
     return false;
   }
 }
 
+function resolveUsableCommand(
+  commands: string[],
+  probeArgs: string[] = ["--version"],
+): string | null {
+  for (const command of commands) {
+    for (const candidate of listCommandCandidates(command)) {
+      if (canExecute(candidate, probeArgs)) return candidate;
+    }
+  }
+  return null;
+}
+
 function bunExists(): boolean {
-  if (commandExists("bun")) return true;
+  if (resolveUsableCommand(["bun"])) return true;
   // Bun installs to ~/.bun/bin which may not be in PATH in MCP server environments
   if (!isWindows) {
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
@@ -58,7 +105,8 @@ function bunExists(): boolean {
 }
 
 function bunCommand(): string {
-  if (commandExists("bun")) return "bun";
+  const resolved = resolveUsableCommand(["bun"]);
+  if (resolved) return resolved;
   const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
   return `${home}/.bun/bin/bun`;
 }
@@ -77,17 +125,21 @@ function resolveWindowsBash(): string | null {
     "C:\\Program Files (x86)\\Git\\usr\\bin\\bash.exe",
   ];
   for (const p of knownPaths) {
-    if (existsSync(p)) return p;
+    if (existsSync(p) && canExecute(p, ["--version"])) return p;
   }
 
   // Fallback: scan PATH via `where bash`, skipping WSL and WindowsApps entries.
   try {
-    const result = execSync("where bash", { encoding: "utf-8", stdio: "pipe" });
+    const result = execFileSync("where.exe", ["bash"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    });
     const candidates = result.trim().split(/\r?\n/).map(p => p.trim()).filter(Boolean);
     for (const p of candidates) {
       const lower = p.toLowerCase();
       if (lower.includes("system32") || lower.includes("windowsapps")) continue;
-      return p;
+      if (canExecute(p, ["--version"])) return p;
     }
     return null;
   } catch {
@@ -96,8 +148,12 @@ function resolveWindowsBash(): string | null {
 }
 
 function getVersion(cmd: string): string {
+  const lower = basename(cmd).toLowerCase();
+  const args = lower === "py" || lower === "py.exe"
+    ? ["-3", "--version"]
+    : ["--version"];
   try {
-    return execSync(`${cmd} --version`, {
+    return execFileSync(cmd, args, {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
       timeout: 5000,
@@ -112,36 +168,48 @@ function getVersion(cmd: string): string {
 export function detectRuntimes(): RuntimeMap {
   const hasBun = bunExists();
   const bun = hasBun ? bunCommand() : null;
+  const typescript = bun
+    ?? resolveUsableCommand(["tsx"], ["--version"])
+    ?? resolveUsableCommand(["ts-node"], ["--version"]);
+  const python = isWindows
+    ? resolveUsableCommand(["py"], ["-3", "--version"])
+      ?? resolveUsableCommand(["python"], ["--version"])
+      ?? resolveUsableCommand(["python3"], ["--version"])
+    : resolveUsableCommand(["python3"], ["--version"])
+      ?? resolveUsableCommand(["python"], ["--version"]);
 
   return {
     javascript: bun ?? process.execPath,
-    typescript: bun
-      ? bun
-      : commandExists("tsx")
-        ? "tsx"
-        : commandExists("ts-node")
-          ? "ts-node"
-          : null,
-    python: commandExists("python3")
-      ? "python3"
-      : commandExists("python")
-        ? "python"
-        : null,
+    typescript,
+    python,
     shell: isWindows
-      ? (resolveWindowsBash() ?? (commandExists("sh") ? "sh" : commandExists("powershell") ? "powershell" : "cmd.exe"))
-      : commandExists("bash") ? "bash" : "sh",
-    ruby: commandExists("ruby") ? "ruby" : null,
-    go: commandExists("go") ? "go" : null,
-    rust: commandExists("rustc") ? "rustc" : null,
-    php: commandExists("php") ? "php" : null,
-    perl: commandExists("perl") ? "perl" : null,
-    r: commandExists("Rscript")
-      ? "Rscript"
-      : commandExists("r")
-        ? "r"
-        : null,
-    elixir: commandExists("elixir") ? "elixir" : null,
+      ? (resolveWindowsBash() ?? resolveUsableCommand(["sh"], ["--version"]) ?? "cmd.exe")
+      : resolveUsableCommand(["bash"], ["--version"]) ?? "sh",
+    ruby: resolveUsableCommand(["ruby"], ["--version"]),
+    go: resolveUsableCommand(["go"], ["version"]),
+    rust: resolveUsableCommand(["rustc"], ["--version"]),
+    php: resolveUsableCommand(["php"], ["--version"]),
+    perl: resolveUsableCommand(["perl"], ["--version"]),
+    r: resolveUsableCommand(["Rscript"], ["--version"])
+      ?? resolveUsableCommand(["r"], ["--version"]),
+    elixir: resolveUsableCommand(["elixir"], ["--version"]),
   };
+}
+
+function isPyLauncher(command: string): boolean {
+  const lower = basename(command).toLowerCase();
+  return lower === "py" || lower === "py.exe";
+}
+
+export function getPythonCommand(runtimes: RuntimeMap, filePath: string): string[] {
+  if (!runtimes.python) {
+    throw new Error(
+      "No Python runtime available. Install python3 or python.",
+    );
+  }
+  return isPyLauncher(runtimes.python)
+    ? [runtimes.python, "-3", filePath]
+    : [runtimes.python, filePath];
 }
 
 export function hasBunRuntime(): boolean {
@@ -250,12 +318,7 @@ export function buildCommand(
       return ["ts-node", filePath];
 
     case "python":
-      if (!runtimes.python) {
-        throw new Error(
-          "No Python runtime available. Install python3 or python.",
-        );
-      }
-      return [runtimes.python, filePath];
+      return getPythonCommand(runtimes, filePath);
 
     case "shell":
       return [runtimes.shell, filePath];

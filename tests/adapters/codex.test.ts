@@ -1,6 +1,6 @@
 import "../setup-home";
 import { describe, it, expect, beforeEach } from "vitest";
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { CodexAdapter } from "../../src/adapters/codex/index.js";
@@ -240,15 +240,14 @@ describe("Codex pretooluse hook script", () => {
       turn_id: "t1",
     });
 
-    const stdout = execSync(
-      `printf '%s' '${input.replace(/'/g, "'\\''")}' | node ${hookScript}`,
-      {
-        encoding: "utf-8",
-        timeout: 10000,
-      },
-    );
+    const result = spawnSync("node", [hookScript], {
+      input,
+      encoding: "utf-8",
+      timeout: 10000,
+    });
 
-    const parsed = JSON.parse(stdout.trim());
+    expect(result.status).toBe(0);
+    const parsed = JSON.parse((result.stdout ?? "").trim());
     expect(parsed.hookSpecificOutput).toBeDefined();
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
   });

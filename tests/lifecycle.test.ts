@@ -6,12 +6,13 @@
  */
 
 import { describe, test, assert } from "vitest";
-import { spawn, execSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { startLifecycleGuard } from "../src/lifecycle.js";
+import { buildCommand, detectRuntimes } from "../src/runtime.js";
 
-const TSX_PATH = execSync("which tsx", { encoding: "utf-8" }).trim();
+const runtimes = detectRuntimes();
 
 function spawnGuardChild(exitCode: number): { child: ReturnType<typeof spawn>; ready: Promise<void> } {
   const script = join(process.cwd(), `_lifecycle_test_${exitCode}.ts`);
@@ -24,7 +25,8 @@ startLifecycleGuard({
 process.stdout.write("READY");
 setInterval(() => {}, 1000);
 `);
-  const child = spawn(TSX_PATH, [script], {
+  const cmd = buildCommand(runtimes, "typescript", script);
+  const child = spawn(cmd[0], cmd.slice(1), {
     cwd: process.cwd(),
     stdio: ["pipe", "pipe", "pipe"],
   });

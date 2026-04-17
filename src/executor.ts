@@ -13,6 +13,16 @@ import type { ExecResult } from "./types.js";
 
 const isWin = process.platform === "win32";
 
+function errorMessage(err: unknown): string {
+  if (err && typeof err === "object") {
+    const maybe = err as { stderr?: string | Buffer; message?: string };
+    if (typeof maybe.stderr === "string") return maybe.stderr;
+    if (Buffer.isBuffer(maybe.stderr)) return maybe.stderr.toString("utf-8");
+    if (typeof maybe.message === "string") return maybe.message;
+  }
+  return String(err);
+}
+
 /**
  * Resolve the real OS temp directory, bypassing any TMPDIR env override.
  * os.tmpdir() reads TMPDIR from the environment, which some shells/tools
@@ -194,7 +204,7 @@ export class PolyglotExecutor {
         stdio: ["pipe", "pipe", "pipe"],
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? (err as any).stderr || err.message : String(err);
+      const message = errorMessage(err);
       return {
         stdout: "",
         stderr: `Compilation failed:\n${message}`,

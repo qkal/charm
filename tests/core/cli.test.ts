@@ -723,6 +723,7 @@ describe("Cross-OS compatibility", () => {
 
 describe("Bin entry uses cli.bundle.mjs", () => {
   const pkg = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8"));
+  const diagnosticsSrc = readFileSync(resolve(ROOT, "src", "server", "diagnostics.ts"), "utf-8");
 
   it("package.json bin points to cli.bundle.mjs, not build/cli.js", () => {
     expect(pkg.bin["charm"]).toBe("./cli.bundle.mjs");
@@ -737,16 +738,17 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     const doctorSection = src.slice(src.indexOf("ctx_doctor"), src.indexOf("ctx_upgrade"));
     // Must NOT delegate to CLI — runs server-side
     expect(doctorSection).not.toContain('node "');
-    // Must run actual checks
-    expect(doctorSection).toContain("PolyglotExecutor");
-    expect(doctorSection).toContain("FTS5");
+    // Diagnostics implementation lives in the extracted module
+    expect(diagnosticsSrc).toContain("PolyglotExecutor");
+    expect(diagnosticsSrc).toContain("FTS5");
   });
 
   it("server.ts ctx_upgrade uses cli.bundle.mjs with fallback", () => {
     const src = readFileSync(resolve(ROOT, "src", "server.ts"), "utf-8");
     // ctx_upgrade handler must prefer cli.bundle.mjs
     const upgradeSection = src.slice(src.indexOf("ctx_upgrade"), src.indexOf("ctx_upgrade") + 800);
-    expect(upgradeSection).toContain("cli.bundle.mjs");
+    expect(upgradeSection).toContain("buildUpgradeMessage");
+    expect(diagnosticsSrc).toContain("cli.bundle.mjs");
   });
 
   it("server.ts registers empty prompts/resources handlers to avoid -32601 (#168)", () => {
@@ -917,6 +919,7 @@ describe("Cache dir safety (#181)", () => {
 describe("Shell-free upgrade (#185)", () => {
   const CLI_SOURCE = readFileSync(resolve(ROOT, "src/cli.ts"), "utf-8");
   const SERVER_SOURCE = readFileSync(resolve(ROOT, "src/server.ts"), "utf-8");
+  const DIAGNOSTICS_SOURCE = readFileSync(resolve(ROOT, "src", "server", "diagnostics.ts"), "utf-8");
 
   test("cli.ts upgrade function uses execFileSync, not execSync", () => {
     // Extract upgrade function body (from "async function upgrade" to end of file)
@@ -940,14 +943,10 @@ describe("Shell-free upgrade (#185)", () => {
   });
 
   test("server.ts inline fallback uses execFileSync, not execSync", () => {
-    // The inline script template must use execFileSync
-    const inlineStart = SERVER_SOURCE.indexOf("Inline fallback");
-    expect(inlineStart).toBeGreaterThan(-1);
-    const inlineSection = SERVER_SOURCE.slice(inlineStart, SERVER_SOURCE.indexOf("cmd =", inlineStart + 500));
-
-    // Generated script lines must import execFileSync
-    expect(inlineSection).toContain("execFileSync");
-    expect(inlineSection).not.toMatch(/(?<!File)execSync/);
+    // The inline script template now lives in the extracted diagnostics module.
+    expect(DIAGNOSTICS_SOURCE).toContain("execFileSync");
+    expect(DIAGNOSTICS_SOURCE).not.toMatch(/(?<!File)execSync/);
+    expect(SERVER_SOURCE).toContain("buildUpgradeMessage");
   });
 });
 
