@@ -1,0 +1,18 @@
+{
+  "name": "charm",
+  "description": "Charm hooks for context window protection",
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "*",
+        "command": "charm hook kiro pretooluse"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "*",
+        "command": "charm hook kiro posttooluse"
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "charm",
+  "version": "0.1.0",
+  "description": "MCP server that saves 98% of your context window with session continuity. Sandboxed code execution in 11 languages, FTS5 knowledge base with BM25 ranking, and automatic state restore across compactions.",
+  "author": {
+    "name": "Kal",
+    "url": "https://github.com/lovablia"
+  },
+  "homepage": "https://github.com/lovablia/charm#readme",
+  "repository": "https://github.com/lovablia/charm",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "context-window",
+    "sandbox",
+    "code-execution",
+    "fts5",
+    "bm25",
+    "playwright",
+    "context7"
+  ],
+  "mcpServers": {
+    "charm": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/start.mjs"
+      ]
+    }
+  },
+  "skills": "./skills/"
+}

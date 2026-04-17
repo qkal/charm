@@ -1,0 +1,33 @@
+{
+  "name": "charm",
+  "owner": {
+    "name": "Kal",
+    "email": "code.kal@lovablia.com"
+  },
+  "metadata": {
+    "description": "Claude Code plugins by Kal",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "charm",
+      "source": "./",
+      "description": "MCP server that saves 98% of your context window.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Kal"
+      },
+      "category": "development",
+      "keywords": [
+        "mcp",
+        "context-window",
+        "sandbox",
+        "code-execution",
+        "fts5",
+        "bm25",
+        "playwright",
+        "context7"
+      ]
+    }
+  ]
+}

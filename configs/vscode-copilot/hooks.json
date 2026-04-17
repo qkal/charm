@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      { "type": "command", "command": "charm hook vscode-copilot pretooluse" }
+    ],
+    "PostToolUse": [
+      { "type": "command", "command": "charm hook vscode-copilot posttooluse" }
+    ],
+    "PreCompact": [
+      { "type": "command", "command": "charm hook vscode-copilot precompact" }
+    ],
+    "SessionStart": [
+      { "type": "command", "command": "charm hook vscode-copilot sessionstart" }
+    ]
+  }
+}

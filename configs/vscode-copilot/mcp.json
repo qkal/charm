@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "charm": {
+      "command": "npx",
+      "args": ["-y", "charm"]
+    }
+  }
+}

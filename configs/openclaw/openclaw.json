@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openclaw.ai/config.json",
+  "plugins": {
+    "entries": {
+      "charm": {
+        "enabled": true
+      }
+    },
+    "slots": {
+      "contextEngine": "charm"
+    }
+  }
+}

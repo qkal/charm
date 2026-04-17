@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "charm": {
+      "command": "node",
+      "args": ["./start.mjs"]
+    }
+  }
+}
