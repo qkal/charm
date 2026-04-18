@@ -13,13 +13,6 @@ import { z } from "zod";
 import { PolyglotExecutor } from "./executor.js";
 import { ContentStore, cleanupStaleDBs, cleanupStaleContentDBs, type SearchResult, type IndexResult } from "./store.js";
 import {
-  readBashPolicies,
-  evaluateCommandDenyOnly,
-  extractShellCommands,
-  readToolDenyPatterns,
-  evaluateFilePath,
-} from "./security.js";
-import {
   detectRuntimes,
   getRuntimeSummary,
   getAvailableLanguages,
@@ -32,6 +25,7 @@ import type { HookAdapter } from "./adapters/types.js";
 import { loadDatabase } from "./db-base.js";
 import { AnalyticsEngine, formatReport } from "./session/analytics.js";
 import { buildDoctorReport, buildUpgradeMessage } from "./server/diagnostics.js";
+import { PolicyEngine } from "./server/execution/policy-engine.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
 const VERSION: string = (() => {
   for (const rel of ["../package.json", "./package.json"]) {
@@ -306,6 +300,13 @@ function trackIndexed(bytes: number): void {
 // Security: server-side deny firewall
 // ==============================================================================
 
+const policyEngine = new PolicyEngine({
+  // Preserve existing behavior: server policy checks were scoped to CLAUDE_PROJECT_DIR.
+  // Hooks remain the primary enforcement path when settings are unavailable.
+  projectDir: process.env.CLAUDE_PROJECT_DIR,
+  failOpen: true,
+});
+
 /**
  * Check a shell command against Bash deny patterns.
  * Returns an error ToolResult if denied, or null if allowed.
@@ -314,21 +315,17 @@ function checkDenyPolicy(
   command: string,
   toolName: string,
 ): ToolResult | null {
-  try {
-    const policies = readBashPolicies(process.env.CLAUDE_PROJECT_DIR);
-    const result = evaluateCommandDenyOnly(command, policies);
-    if (result.decision === "deny") {
-      return trackResponse(toolName, {
-        content: [{
-          type: "text" as const,
-          text: `Command blocked by security policy: matches deny pattern ${result.matchedPattern}`,
-        }],
-        isError: true,
-      });
-    }
-  } catch {
-    // Security check failed — allow through (fail-open for server,
-    // hooks are the primary enforcement layer)
+  // Keep policy project scope in sync with runtime env.
+  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
+  const result = policyEngine.checkShellCommand(command);
+  if (result.decision === "deny") {
+    return trackResponse(toolName, {
+      content: [{
+        type: "text" as const,
+        text: `Command blocked by security policy: matches deny pattern ${result.matchedPattern}`,
+      }],
+      isError: true,
+    });
   }
   return null;
 }
@@ -341,24 +338,17 @@ function checkNonShellDenyPolicy(
   language: string,
   toolName: string,
 ): ToolResult | null {
-  try {
-    const commands = extractShellCommands(code, language);
-    if (commands.length === 0) return null;
-    const policies = readBashPolicies(process.env.CLAUDE_PROJECT_DIR);
-    for (const cmd of commands) {
-      const result = evaluateCommandDenyOnly(cmd, policies);
-      if (result.decision === "deny") {
-        return trackResponse(toolName, {
-          content: [{
-            type: "text" as const,
-            text: `Command blocked by security policy: embedded shell command "${cmd}" matches deny pattern ${result.matchedPattern}`,
-          }],
-          isError: true,
-        });
-      }
-    }
-  } catch {
-    // Fail-open
+  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
+  const result = policyEngine.checkEmbeddedShellCommands(code, language);
+  if (result.decision === "deny") {
+    const blockedCommand = result.subject ?? "";
+    return trackResponse(toolName, {
+      content: [{
+        type: "text" as const,
+        text: `Command blocked by security policy: embedded shell command "${blockedCommand}" matches deny pattern ${result.matchedPattern}`,
+      }],
+      isError: true,
+    });
   }
   return null;
 }
@@ -371,20 +361,16 @@ function checkFilePathDenyPolicy(
   filePath: string,
   toolName: string,
 ): ToolResult | null {
-  try {
-    const denyGlobs = readToolDenyPatterns("Read", process.env.CLAUDE_PROJECT_DIR);
-    const result = evaluateFilePath(filePath, denyGlobs);
-    if (result.denied) {
-      return trackResponse(toolName, {
-        content: [{
-          type: "text" as const,
-          text: `File access blocked by security policy: path matches Read deny pattern ${result.matchedPattern}`,
-        }],
-        isError: true,
-      });
-    }
-  } catch {
-    // Fail-open
+  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
+  const result = policyEngine.checkFilePath(filePath);
+  if (result.decision === "deny") {
+    return trackResponse(toolName, {
+      content: [{
+        type: "text" as const,
+        text: `File access blocked by security policy: path matches Read deny pattern ${result.matchedPattern}`,
+      }],
+      isError: true,
+    });
   }
   return null;
 }
