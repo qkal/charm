@@ -1,5 +1,17 @@
 export type PolicyDecision = "allow" | "deny" | "ask";
 
+export interface ToolTextContent {
+  type: "text";
+  text: string;
+  [x: string]: unknown;
+}
+
+export interface ToolResult {
+  [x: string]: unknown;
+  content: ToolTextContent[];
+  isError?: boolean;
+}
+
 export interface PolicyCheckResult {
   decision: PolicyDecision;
   matchedPattern?: string;
