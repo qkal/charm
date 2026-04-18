@@ -71,6 +71,13 @@ Responsibilities:
 - normalize policy decisions into stable internal results
 - provide one place to evolve trust-boundary logic
 
+Policy evaluation must be context-aware:
+
+- interactive hook contexts may continue to use `allow`, `deny`, and `ask`
+- MCP server contexts remain deny-enforcing by default until a real server-side ask/approval path exists
+
+The first hardening pass must not accidentally introduce unreachable `ask` states into the server runtime or silently weaken current deny-only behavior.
+
 Non-responsibilities:
 
 - process spawning
@@ -105,6 +112,19 @@ Responsibilities:
 - produce result envelopes that higher layers can depend on
 - remove ad hoc result interpretation from handlers
 
+#### `ExecutionEffects`
+
+Owns tool-visible side effects that happen after execution but are still part of observable behavior.
+
+Responsibilities:
+
+- output indexing decisions
+- session stats accounting
+- sandboxed-bytes and cache accounting
+- warning decoration and response metadata that are currently coupled to tool responses
+
+This keeps the system from preserving raw execution behavior while accidentally regressing searchability, analytics, or user-visible warning behavior.
+
 #### `ProcessLifecycleManager`
 
 Owns process and shutdown semantics.
@@ -114,6 +134,9 @@ Responsibilities:
 - manage background process bookkeeping
 - coordinate cleanup during shutdown
 - standardize behavior for lifecycle-triggered termination
+- own the shutdown ordering between lifecycle guard callbacks, executor cleanup, and transport close
+
+This ownership must be explicit so background processes are neither leaked nor double-killed during migration.
 
 #### `ExecutionService`
 
@@ -125,6 +148,7 @@ Responsibilities:
 - call `PolicyEngine`
 - call `ExecutionEngine`
 - call `ResultNormalizer`
+- call `ExecutionEffects` when a tool flow requires post-execution indexing, accounting, or warning decoration
 - return a stable internal result contract
 
 This is the internal boundary the MCP server should depend on.
@@ -152,6 +176,16 @@ After migration, `src/server.ts` should primarily:
 
 It should no longer own business logic for execution and policy enforcement.
 
+### Non-Negotiable Compatibility Invariants
+
+The composition refactor must preserve a small set of behavior that is easy to accidentally drop even though clients and tests depend on it.
+
+- empty prompts/resources/resource-template handlers must remain registered so MCP clients do not hit `-32601` transport issues
+- `ctx_doctor` must keep running diagnostics in-process rather than shelling out through a CLI path
+- `ctx_upgrade` must preserve the current bundle-first fallback behavior
+- tool responses that currently index output or update runtime/session stats must keep doing so unless explicitly redesigned and documented
+- cross-platform execution invariants must stay intact, especially Windows shell resolution, safe env shaping, temp-dir handling, and process-tree cleanup
+
 ## Target Flow
 
 The desired core flow is:
@@ -164,6 +198,23 @@ This creates one trusted path for dangerous operations and removes the current p
 
 The migration should be phased so `charm` stays operational throughout the rewrite.
 
+### Phase 0: Freeze critical invariants before extraction
+
+Before moving logic, explicitly inventory and preserve the contracts that the refactor is not allowed to casually break.
+
+Minimum frozen invariants:
+
+- MCP capability/handler registration that keeps clients stable
+- deny-only server policy behavior versus interactive ask-capable hook behavior
+- execution side effects such as indexing, stats, cache accounting, and warning decoration
+- cross-platform runtime and env behavior
+- timeout, output-cap, and process-tree cleanup semantics
+
+Success criteria:
+
+- the plan starts from a known behavior baseline
+- extraction work can be measured against explicit compatibility targets rather than memory
+
 ### Phase 1: Define internal contracts
 
 Create stable request and response contracts for execution and policy outcomes.
@@ -173,6 +224,7 @@ Expected outputs:
 - normalized execution request type
 - normalized policy decision type
 - normalized execution result type
+- normalized execution-effects contract for indexing, stats, and response decoration where applicable
 
 Success criteria:
 
@@ -236,6 +288,7 @@ The hardening strategy is structural, not just defensive patching.
 - eliminate policy duplication across the server layer
 - make policy decisions explicit and typed
 - ensure execution cannot bypass the central policy boundary
+- keep server-side policy semantics honest: deny-enforcing until an actual approval interaction exists
 - normalize timeout and shutdown behavior so failure states are predictable
 - isolate environment shaping and temp-file behavior to one execution owner
 
@@ -259,6 +312,7 @@ Add or expand integration tests for:
 - `ExecutionService` under allow, deny, timeout, and failure scenarios
 - background process cleanup and shutdown behavior
 - compatibility behavior for migrated tool flows
+- execution-effects behavior for indexing, stats, warnings, and cache accounting
 
 ### Regression Tests
 
@@ -267,6 +321,8 @@ Retain and expand regression tests for:
 - core MCP tool contracts that must remain intact
 - failure-path behavior that historically caused instability
 - cross-platform runtime selection and process handling
+- capability-registration behavior that keeps MCP clients from failing early
+- output-cap, temp-dir, safe-env, and process-tree cleanup invariants
 
 ### Test Success Criteria
 
@@ -316,6 +372,7 @@ Mitigation:
 - migrate one risky flow at a time
 - add compatibility wrappers
 - expand integration coverage before removing old paths
+- treat execution side effects as part of behavior, not as optional cleanup
 
 ### Risk: creating a new god object
 
@@ -352,4 +409,3 @@ The implementation plan should break work into small, reviewable steps that:
 - extract the policy and execution boundary next
 - migrate high-risk flows incrementally
 - finish by shrinking `server.ts` into a composition root
-
