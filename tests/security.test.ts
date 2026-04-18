@@ -438,6 +438,12 @@ describe("evaluateFilePath", () => {
     assert.equal(result.matchedPattern, ".env");
   });
 
+  test("evaluateFilePath: normalized './sub/../.env' denied by ['.env']", () => {
+    const result = evaluateFilePath("./sub/../.env", [[".env"]], false);
+    assert.equal(result.denied, true);
+    assert.equal(result.matchedPattern, ".env");
+  });
+
   test("evaluateFilePath: src/config.ts not denied by ['.env']", () => {
     const result = evaluateFilePath("src/config.ts", [[".env"]], false);
     assert.equal(result.denied, false);

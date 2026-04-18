@@ -1236,6 +1236,21 @@ describe("Platform-aware session paths via adapter", () => {
     expect(body).not.toContain("OPENCLAW_HOME"); // install dir, not project dir
   });
 
+  test("policy and executor use getProjectDir for project scope", () => {
+    expect(serverSrc).toContain("projectRoot: getProjectDir()");
+    expect(serverSrc).toContain("projectDir: getProjectDir()");
+    expect(serverSrc).toContain("policyEngine.setProjectDir(getProjectDir())");
+  });
+
+  test("checkFilePathDenyPolicy evaluates raw and canonical path forms", () => {
+    const fn = serverSrc.match(/function checkFilePathDenyPolicy[\s\S]*?^}/m);
+    expect(fn).not.toBeNull();
+    const body = fn![0];
+    expect(body).toContain("const absolutePath = resolve(projectDir, filePath)");
+    expect(body).toContain("const relativePath = relative(projectDir, absolutePath)");
+    expect(body).toContain("const candidates = [filePath, absolutePath, relativePath]");
+  });
+
   // ── Content DB is platform-isolated (not shared) ──
   test("getStorePath uses platform-specific dir, not shared ~/.charm/", () => {
     const fn = serverSrc.match(/function getStorePath[\s\S]*?^}/m);

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { existsSync, unlinkSync, readdirSync, readFileSync, writeFileSync, rmSync, mkdirSync, cpSync, statSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
 import { request as httpsRequest } from "node:https";
@@ -68,7 +68,7 @@ server.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => 
 
 const executor = new PolyglotExecutor({
   runtimes,
-  projectRoot: process.env.CLAUDE_PROJECT_DIR,
+  projectRoot: getProjectDir(),
 });
 
 // ─────────────────────────────────────────────────────────
@@ -301,9 +301,8 @@ function trackIndexed(bytes: number): void {
 // ==============================================================================
 
 const policyEngine = new PolicyEngine({
-  // Preserve existing behavior: server policy checks were scoped to CLAUDE_PROJECT_DIR.
-  // Hooks remain the primary enforcement path when settings are unavailable.
-  projectDir: process.env.CLAUDE_PROJECT_DIR,
+  // Use the same cross-platform project root resolution as all other server paths.
+  projectDir: getProjectDir(),
   failOpen: true,
 });
 
@@ -316,7 +315,7 @@ function checkDenyPolicy(
   toolName: string,
 ): ToolResult | null {
   // Keep policy project scope in sync with runtime env.
-  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
+  policyEngine.setProjectDir(getProjectDir());
   const result = policyEngine.checkShellCommand(command);
   if (result.decision === "deny") {
     return trackResponse(toolName, {
@@ -338,7 +337,7 @@ function checkNonShellDenyPolicy(
   language: string,
   toolName: string,
 ): ToolResult | null {
-  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
+  policyEngine.setProjectDir(getProjectDir());
   const result = policyEngine.checkEmbeddedShellCommands(code, language);
   if (result.decision === "deny") {
     const blockedCommand = result.subject ?? "";
@@ -361,16 +360,28 @@ function checkFilePathDenyPolicy(
   filePath: string,
   toolName: string,
 ): ToolResult | null {
-  policyEngine.setProjectDir(process.env.CLAUDE_PROJECT_DIR);
-  const result = policyEngine.checkFilePath(filePath);
-  if (result.decision === "deny") {
-    return trackResponse(toolName, {
-      content: [{
-        type: "text" as const,
-        text: `File access blocked by security policy: path matches Read deny pattern ${result.matchedPattern}`,
-      }],
-      isError: true,
-    });
+  const projectDir = getProjectDir();
+  policyEngine.setProjectDir(projectDir);
+
+  // Evaluate both user input and canonical forms so deny rules cannot be bypassed
+  // with traversal variants and can still match absolute-path patterns.
+  const absolutePath = resolve(projectDir, filePath);
+  const relativePath = relative(projectDir, absolutePath);
+  const candidates = [filePath, absolutePath, relativePath].filter(
+    (candidate, index, arr) => candidate.length > 0 && arr.indexOf(candidate) === index,
+  );
+
+  for (const candidate of candidates) {
+    const result = policyEngine.checkFilePath(candidate);
+    if (result.decision === "deny") {
+      return trackResponse(toolName, {
+        content: [{
+          type: "text" as const,
+          text: `File access blocked by security policy: path matches Read deny pattern ${result.matchedPattern}`,
+        }],
+        isError: true,
+      });
+    }
   }
   return null;
 }

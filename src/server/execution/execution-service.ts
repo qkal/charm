@@ -53,10 +53,10 @@ export class ExecutionService {
     const { language, code, timeout, background, intent } = args;
 
     if (language === "shell") {
-      const denied = this.#checkDenyPolicy(code, "execute");
+      const denied = this.#checkDenyPolicy(code, "ctx_execute");
       if (denied) return denied;
     } else {
-      const denied = this.#checkNonShellDenyPolicy(code, language, "execute");
+      const denied = this.#checkNonShellDenyPolicy(code, language, "ctx_execute");
       if (denied) return denied;
     }
 
@@ -84,14 +84,14 @@ export class ExecutionService {
   }): Promise<ToolResult> {
     const { path, language, code, timeout, intent } = args;
 
-    const pathDenied = this.#checkFilePathDenyPolicy(path, "execute_file");
+    const pathDenied = this.#checkFilePathDenyPolicy(path, "ctx_execute_file");
     if (pathDenied) return pathDenied;
 
     if (language === "shell") {
-      const denied = this.#checkDenyPolicy(code, "execute_file");
+      const denied = this.#checkDenyPolicy(code, "ctx_execute_file");
       if (denied) return denied;
     } else {
-      const denied = this.#checkNonShellDenyPolicy(code, language, "execute_file");
+      const denied = this.#checkNonShellDenyPolicy(code, language, "ctx_execute_file");
       if (denied) return denied;
     }
 

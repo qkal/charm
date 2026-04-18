@@ -7,6 +7,44 @@ function textResult(text: string, isError = false): ToolResult {
 }
 
 describe("ExecutionService", () => {
+  test("execute passes canonical tool name to policy checks", async () => {
+    const denied = textResult("blocked", true);
+    const checkDenyPolicy = vi.fn(() => denied);
+    const checkNonShellDenyPolicy = vi.fn(() => denied);
+    const service = new ExecutionService({
+      runExecute: vi.fn() as any,
+      runExecuteFile: vi.fn() as any,
+      checkDenyPolicy: checkDenyPolicy as any,
+      checkNonShellDenyPolicy: checkNonShellDenyPolicy as any,
+      checkFilePathDenyPolicy: vi.fn(() => null) as any,
+      effects: {
+        handleExecuteResult: vi.fn(),
+        handleExecuteFileResult: vi.fn(),
+        runtimeError: vi.fn(),
+      } as any,
+    });
+
+    await service.execute({
+      language: "shell",
+      code: "echo test",
+      timeout: 1000,
+      background: false,
+    });
+    expect(checkDenyPolicy).toHaveBeenCalledWith("echo test", "ctx_execute");
+
+    await service.execute({
+      language: "javascript",
+      code: "console.log('x')",
+      timeout: 1000,
+      background: false,
+    });
+    expect(checkNonShellDenyPolicy).toHaveBeenCalledWith(
+      "console.log('x')",
+      "javascript",
+      "ctx_execute",
+    );
+  });
+
   test("execute returns deny result without invoking runtime", async () => {
     const runExecute = vi.fn();
     const effects = {
@@ -110,5 +148,31 @@ describe("ExecutionService", () => {
     expect(result).toEqual(denied);
     expect(runExecuteFile).not.toHaveBeenCalled();
     expect(effects.handleExecuteFileResult).not.toHaveBeenCalled();
+  });
+
+  test("executeFile passes canonical tool name to file-path deny check", async () => {
+    const denied = textResult("path blocked", true);
+    const checkFilePathDenyPolicy = vi.fn(() => denied);
+    const service = new ExecutionService({
+      runExecute: vi.fn() as any,
+      runExecuteFile: vi.fn() as any,
+      checkDenyPolicy: vi.fn(() => null) as any,
+      checkNonShellDenyPolicy: vi.fn(() => null) as any,
+      checkFilePathDenyPolicy: checkFilePathDenyPolicy as any,
+      effects: {
+        handleExecuteResult: vi.fn(),
+        handleExecuteFileResult: vi.fn(),
+        runtimeError: vi.fn(),
+      } as any,
+    });
+
+    await service.executeFile({
+      path: ".env",
+      language: "javascript",
+      code: "console.log(FILE_CONTENT)",
+      timeout: 1000,
+    });
+
+    expect(checkFilePathDenyPolicy).toHaveBeenCalledWith(".env", "ctx_execute_file");
   });
 });

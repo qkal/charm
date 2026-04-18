@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, posix } from "node:path";
 import { homedir } from "node:os";
 
 // ==============================================================================
@@ -437,11 +437,25 @@ export function evaluateFilePath(
 ): { denied: boolean; matchedPattern?: string } {
   // Normalize backslashes to forward slashes for cross-platform matching
   const normalized = filePath.replace(/\\/g, "/");
+  // Canonicalize dot segments so globs can't be bypassed with variants like
+  // "./sub/../.env" when the deny rule is "Read(.env)".
+  const canonical = posix.normalize(normalized);
+  const canonicalNoDotPrefix = canonical.startsWith("./")
+    ? canonical.slice(2)
+    : canonical;
+  const candidates = [
+    normalized,
+    canonical,
+    canonicalNoDotPrefix,
+  ].filter((candidate, index, arr) => candidate.length > 0 && arr.indexOf(candidate) === index);
 
   for (const globs of denyGlobs) {
     for (const glob of globs) {
-      if (fileGlobToRegex(glob, caseInsensitive).test(normalized)) {
-        return { denied: true, matchedPattern: glob };
+      const matcher = fileGlobToRegex(glob, caseInsensitive);
+      for (const candidate of candidates) {
+        if (matcher.test(candidate)) {
+          return { denied: true, matchedPattern: glob };
+        }
       }
     }
   }
