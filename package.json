@@ -26,6 +26,7 @@
     ".claude-plugin",
     ".mcp.json",
     "start.mjs",
+    "scripts/release-readiness.mjs",
     "scripts/postinstall.mjs",
     "README.md",
     "LICENSE"
@@ -39,6 +40,8 @@
     "dev": "npx tsx src/server.ts",
     "setup": "npx tsx src/cli.ts setup",
     "doctor": "npx tsx src/cli.ts doctor",
+    "release:check": "node scripts/release-readiness.mjs",
+    "release:check:ci": "node scripts/release-readiness.mjs --ci",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:release-blocking": "vitest run --maxWorkers 1 tests/core/server.test.ts tests/core/cli.test.ts tests/executor.test.ts tests/hooks/integration.test.ts tests/security.test.ts tests/lifecycle.test.ts tests/session-hooks-smoke.test.ts tests/adapters/codex.test.ts",

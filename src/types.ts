@@ -57,6 +57,60 @@ export interface ExecResult {
 }
 
 // ─────────────────────────────────────────────────────────
+// Security mode
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Runtime policy behavior for server-side permission checks.
+ * - compat: preserve fail-open behavior on policy-evaluation errors.
+ * - strict: fail closed on policy-evaluation errors.
+ */
+export type SecurityMode = "compat" | "strict";
+
+export interface SecurityModeResolution {
+  mode: SecurityMode;
+  /** Raw env value after trim/lowercase, when provided. */
+  normalizedInput?: string;
+  /** Optional warning when env input is invalid and fallback was applied. */
+  warning?: string;
+  /** Directly consumed by PolicyEngine. */
+  failOpen: boolean;
+}
+
+// ─────────────────────────────────────────────────────────
+// Release readiness
+// ─────────────────────────────────────────────────────────
+
+export interface ReleaseReadinessStepResult {
+  id: string;
+  label: string;
+  command: string;
+  durationMs: number;
+  exitCode: number;
+  status: "pass" | "fail";
+  stdoutPreview: string;
+  stderrPreview: string;
+}
+
+export interface ReleaseReadinessReport {
+  status: "pass" | "fail";
+  generatedAt: string;
+  metadata: {
+    ci: boolean;
+    cwd: string;
+    nodeVersion: string;
+    platform: string;
+    mode: "local" | "ci";
+    mockMode?: string;
+  };
+  artifacts: {
+    jsonPath: string;
+    markdownPath: string;
+  };
+  steps: ReleaseReadinessStepResult[];
+}
+
+// ─────────────────────────────────────────────────────────
 // Content store shared types
 // ─────────────────────────────────────────────────────────
 

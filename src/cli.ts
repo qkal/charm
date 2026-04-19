@@ -6,6 +6,7 @@
  *   charm                              → Start MCP server (stdio)
  *   charm doctor                       → Diagnose runtime issues, hooks, FTS5, version
  *   charm upgrade                      → Fix hooks, permissions, and settings
+ *   charm release-check [--ci]         → Run release-readiness checklist and emit artifacts
  *   charm hook <platform> <event>      → Dispatch a hook script (used by platform hook configs)
  *
  * Platform auto-detection: CLI detects which platform is running
@@ -26,6 +27,7 @@ import {
   hasBunRuntime,
   getAvailableLanguages,
 } from "./runtime.js";
+import { resolveSecurityMode } from "./security-mode.js";
 
 // ── Adapter imports ──────────────────────────────────────
 import { detectPlatform, getAdapter } from "./adapters/detect.js";
@@ -102,6 +104,8 @@ if (args[0] === "doctor") {
   doctor().then((code) => process.exit(code));
 } else if (args[0] === "upgrade") {
   upgrade();
+} else if (args[0] === "release-check") {
+  releaseCheck(args.slice(1));
 } else if (args[0] === "hook") {
   hookDispatch(args[1], args[2]);
 } else if (args[0] === "insight") {
@@ -201,6 +205,15 @@ async function doctor(): Promise<number> {
     `Platform: ${color.cyan(adapter.name)}` +
       color.dim(` (${detection.confidence} confidence — ${detection.reason})`),
   );
+
+  const securityMode = resolveSecurityMode(process.env.CHARM_SECURITY_MODE);
+  p.log.info(
+    `Security mode: ${color.cyan(securityMode.mode.toUpperCase())}` +
+      color.dim(" (beta default: COMPAT, set CHARM_SECURITY_MODE=strict to harden)"),
+  );
+  if (securityMode.warning) {
+    p.log.warn(color.yellow(securityMode.warning));
+  }
 
   let criticalFails = 0;
 
@@ -415,6 +428,36 @@ async function doctor(): Promise<number> {
       : color.yellow("Some checks need attention — see above for details"),
   );
   return 0;
+}
+
+/* -------------------------------------------------------
+ * Release check — readiness checklist automation
+ * ------------------------------------------------------- */
+
+function releaseCheck(extraArgs: string[]): void {
+  const pluginRoot = getPluginRoot();
+  const scriptPath = resolve(pluginRoot, "scripts", "release-readiness.mjs");
+
+  if (!existsSync(scriptPath)) {
+    p.log.error(
+      color.red("release-check script not found") +
+        color.dim(` — expected at ${scriptPath}`),
+    );
+    process.exit(1);
+  }
+
+  try {
+    execFileSync("node", [scriptPath, ...extraArgs], {
+      cwd: pluginRoot,
+      stdio: "inherit",
+      env: process.env,
+    });
+  } catch (err: unknown) {
+    const status = typeof err === "object" && err && "status" in err
+      ? Number((err as { status?: number }).status)
+      : 1;
+    process.exit(Number.isFinite(status) ? status : 1);
+  }
 }
 
 /* -------------------------------------------------------

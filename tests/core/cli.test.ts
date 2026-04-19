@@ -751,6 +751,11 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     expect(diagnosticsSrc).toContain("cli.bundle.mjs");
   });
 
+  it("ctx_doctor diagnostics include security mode reporting", () => {
+    expect(diagnosticsSrc).toContain("Security mode:");
+    expect(diagnosticsSrc).toContain("beta default: COMPAT");
+  });
+
   it("server.ts registers empty prompts/resources handlers to avoid -32601 (#168)", () => {
     const src = readFileSync(resolve(ROOT, "src", "server.ts"), "utf-8");
     // Must register prompts capability so clients don't get Method not found

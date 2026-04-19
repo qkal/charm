@@ -31,6 +31,7 @@ import { ExecutionEffects } from "./server/execution/execution-effects.js";
 import { ExecutionService } from "./server/execution/execution-service.js";
 import type { ToolResult } from "./server/execution/contracts.js";
 import type { ExecResult } from "./types.js";
+import { resolveSecurityMode } from "./security-mode.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
 const VERSION: string = (() => {
   for (const rel of ["../package.json", "./package.json"]) {
@@ -52,6 +53,10 @@ process.on("uncaughtException", (err) => {
 
 const runtimes = detectRuntimes();
 const available = getAvailableLanguages(runtimes);
+const securityMode = resolveSecurityMode(process.env.CHARM_SECURITY_MODE);
+if (securityMode.warning) {
+  process.stderr.write(`[charm] ${securityMode.warning}\n`);
+}
 const server = new McpServer({
   name: "charm",
   version: VERSION,
@@ -303,7 +308,7 @@ function trackIndexed(bytes: number): void {
 const policyEngine = new PolicyEngine({
   // Use the same cross-platform project root resolution as all other server paths.
   projectDir: getProjectDir(),
-  failOpen: true,
+  failOpen: securityMode.failOpen,
 });
 
 /**
@@ -1677,6 +1682,7 @@ server.registerTool(
       pkgDir: __pkg_dir,
       runtimes,
       version: VERSION,
+      securityMode,
     });
 
     return trackResponse("ctx_doctor", {

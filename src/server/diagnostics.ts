@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { loadDatabase } from "../db-base.js";
 import { PolyglotExecutor } from "../executor.js";
 import { hasBunRuntime, type RuntimeMap } from "../runtime.js";
+import type { SecurityModeResolution } from "../types.js";
 
 export function resolvePluginRoot(pkgDir: string): string {
   return existsSync(resolve(pkgDir, "package.json")) ? pkgDir : dirname(pkgDir);
@@ -13,6 +14,7 @@ export async function buildDoctorReport(opts: {
   pkgDir: string;
   runtimes: RuntimeMap;
   version: string;
+  securityMode: SecurityModeResolution;
 }): Promise<string> {
   const lines: string[] = ["## charm doctor", ""];
   const pluginRoot = resolvePluginRoot(opts.pkgDir);
@@ -25,6 +27,14 @@ export async function buildDoctorReport(opts: {
     lines.push("- [x] Performance: FAST (Bun)");
   } else {
     lines.push("- [-] Performance: NORMAL — install Bun for 3-5x speed boost");
+  }
+
+  lines.push(
+    `- [x] Security mode: ${opts.securityMode.mode.toUpperCase()} ` +
+      `(CHARM_SECURITY_MODE, beta default: COMPAT)`,
+  );
+  if (opts.securityMode.warning) {
+    lines.push(`- [-] Security mode warning: ${opts.securityMode.warning}`);
   }
 
   {

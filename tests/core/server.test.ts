@@ -1242,6 +1242,11 @@ describe("Platform-aware session paths via adapter", () => {
     expect(serverSrc).toContain("policyEngine.setProjectDir(getProjectDir())");
   });
 
+  test("policy failOpen is controlled by resolved security mode", () => {
+    expect(serverSrc).toContain("resolveSecurityMode(process.env.CHARM_SECURITY_MODE)");
+    expect(serverSrc).toContain("failOpen: securityMode.failOpen");
+  });
+
   test("checkFilePathDenyPolicy evaluates raw and canonical path forms", () => {
     const fn = serverSrc.match(/function checkFilePathDenyPolicy[\s\S]*?^}/m);
     expect(fn).not.toBeNull();

@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PolicyEngine } from "../../src/server/execution/policy-engine.js";
+import * as security from "../../src/security.js";
 
 function writeProjectSettings(
   projectDir: string,
@@ -85,5 +86,33 @@ describe("PolicyEngine", () => {
     const engine = new PolicyEngine({ projectDir: rootDir, globalSettingsPath });
     const result = engine.checkShellCommand("rm -rf /tmp/somewhere");
     expect(result.decision).toBe("allow");
+  });
+
+  test("compat mode (failOpen=true) allows when policy evaluation throws", () => {
+    const spy = vi.spyOn(security, "readBashPolicies").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    try {
+      const engine = new PolicyEngine({ projectDir: rootDir, globalSettingsPath, failOpen: true });
+      const result = engine.checkShellCommand("echo hello");
+      expect(result.decision).toBe("allow");
+      expect(result.reason).toBe("policy-check-failed-open");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("strict mode (failOpen=false) denies when policy evaluation throws", () => {
+    const spy = vi.spyOn(security, "readBashPolicies").mockImplementation(() => {
+      throw new Error("boom");
+    });
+    try {
+      const engine = new PolicyEngine({ projectDir: rootDir, globalSettingsPath, failOpen: false });
+      const result = engine.checkShellCommand("echo hello");
+      expect(result.decision).toBe("deny");
+      expect(result.reason).toContain("policy-check-failed-closed");
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
