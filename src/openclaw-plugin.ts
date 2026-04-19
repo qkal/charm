@@ -30,7 +30,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -43,6 +43,7 @@ import { buildResumeSnapshot } from "./session/snapshot.js";
 import type { SessionEvent } from "./types.js";
 
 import { WorkspaceRouter } from "./openclaw/workspace-router.js";
+import { readRoutingPrompt } from "./routing-prompts.js";
 
 // ── OpenClaw Plugin API Types ─────────────────────────────
 
@@ -245,16 +246,7 @@ export default {
     // Load routing instructions synchronously for prompt injection
     let routingInstructions = "";
     try {
-      const instructionsPath = resolve(
-        buildDir,
-        "..",
-        "configs",
-        "openclaw",
-        "AGENTS.md",
-      );
-      if (existsSync(instructionsPath)) {
-        routingInstructions = readFileSync(instructionsPath, "utf-8");
-      }
+      routingInstructions = readRoutingPrompt("openclaw", pluginRoot) ?? "";
     } catch {
       // best effort
     }

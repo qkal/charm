@@ -33,8 +33,13 @@ import {
   chmodSync,
   constants,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import {
+  readRoutingPrompt,
+  upsertRoutingInstructionsFile,
+} from "../../routing-prompts.js";
 
 import type {
   HookAdapter,
@@ -574,6 +579,21 @@ export class VSCodeCopilotAdapter implements HookAdapter {
   updatePluginRegistry(_pluginRoot: string, _version: string): void {
     // VS Code manages extensions through its own marketplace/extension system.
     // No manual registry update needed.
+  }
+
+  getRoutingInstructions(pluginRoot?: string): string {
+    const resolvedPluginRoot =
+      pluginRoot ??
+      resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const instructions = readRoutingPrompt("vscode-copilot", resolvedPluginRoot);
+    if (instructions) return instructions;
+    return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of terminal/read for data-heavy operations.";
+  }
+
+  writeRoutingInstructions(projectDir: string, pluginRoot: string): "created" | "updated" | "unchanged" {
+    const instructions = this.getRoutingInstructions(pluginRoot);
+    const targetPath = join(projectDir, ".github", "copilot-instructions.md");
+    return upsertRoutingInstructionsFile(targetPath, instructions);
   }
 
   // ── Internal helpers ───────────────────────────────────

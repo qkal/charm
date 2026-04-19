@@ -29,8 +29,13 @@ import {
   chmodSync,
   constants,
 } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import {
+  readRoutingPrompt,
+  upsertRoutingInstructionsFile,
+} from "../../routing-prompts.js";
 
 import type {
   HookAdapter,
@@ -534,6 +539,23 @@ export class GeminiCLIAdapter implements HookAdapter {
     } catch {
       /* best effort */
     }
+  }
+
+  getRoutingInstructions(pluginRoot?: string): string {
+    const resolvedPluginRoot =
+      pluginRoot ??
+      resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const instructions = readRoutingPrompt("gemini-cli", resolvedPluginRoot);
+    if (instructions) return instructions;
+    return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of shell/read_file for data-heavy operations.";
+  }
+
+  writeRoutingInstructions(projectDir: string, pluginRoot: string): "created" | "updated" | "unchanged" {
+    const instructions = this.getRoutingInstructions(pluginRoot);
+    return upsertRoutingInstructionsFile(
+      join(projectDir, "GEMINI.md"),
+      instructions,
+    );
   }
 
   // ── Internal helpers ───────────────────────────────────

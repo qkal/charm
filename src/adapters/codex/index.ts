@@ -27,6 +27,7 @@ import {
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { readRoutingPrompt } from "../../routing-prompts.js";
 
 import type {
   HookAdapter,
@@ -374,21 +375,15 @@ export class CodexAdapter implements HookAdapter {
   }
 
   getRoutingInstructions(): string {
-    const instructionsPath = resolve(
+    const pluginRoot = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
       "..",
       "..",
-      "configs",
-      "codex",
-      "AGENTS.md",
     );
-    try {
-      return readFileSync(instructionsPath, "utf-8");
-    } catch {
-      // Fallback inline instructions
-      return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of bash/cat/curl for data-heavy operations.";
-    }
+    const instructions = readRoutingPrompt("codex", pluginRoot);
+    if (instructions) return instructions;
+    return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of bash/cat/curl for data-heavy operations.";
   }
 
   // ── Internal helpers ───────────────────────────────────

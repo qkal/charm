@@ -1,0 +1,27 @@
+# charm bootstrap
+
+Use this bootstrap when a user says:
+
+`Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm`
+
+## What to do
+
+1. Detect the current agent provider.
+2. Fetch the matching standalone provider markdown below.
+3. Follow that file exactly for tool-routing and context-protection behavior.
+4. If provider is unknown, use the Codex file as default.
+
+## Provider prompts
+
+- Claude Code: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/claude-code.md
+- Codex: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/codex.md
+- Cursor: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/cursor.md
+- Gemini CLI: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/gemini-cli.md
+- Antigravity: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/antigravity.md
+- VS Code Copilot: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/vscode-copilot.md
+- Kiro: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/kiro.md
+- Zed: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/zed.md
+- OpenClaw: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/openclaw.md
+- OpenCode: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/opencode.md
+- Kilo: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/kilo.md
+- Pi: https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/pi.md

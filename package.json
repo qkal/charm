@@ -19,6 +19,7 @@
     "build",
     "hooks",
     "configs",
+    "prompts",
     "insight",
     "server.bundle.mjs",
     "cli.bundle.mjs",
@@ -28,6 +29,7 @@
     "start.mjs",
     "scripts/release-readiness.mjs",
     "scripts/postinstall.mjs",
+    "charm",
     "README.md",
     "LICENSE"
   ],

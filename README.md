@@ -41,6 +41,19 @@ charm release-check
 
 3. For MCP usage in this repo, `.mcp.json` already points to `start.mjs`.
 
+## Standalone Prompt Install
+
+Charm now ships standalone markdown prompts per provider plus a universal bootstrap file.
+
+- Bootstrap prompt: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm`
+- Provider prompts: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/<provider>.md`
+
+Example user instruction:
+
+```text
+Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm
+```
+
 ## Supported Platforms
 
 Charm includes adapter/config coverage for:

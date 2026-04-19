@@ -28,4 +28,4 @@ export const HOOK_TYPES = {} as const;
  * when Codex CLI initializes the MCP server. This is the only integration
  * point since hooks are not supported.
  */
-export const ROUTING_INSTRUCTIONS_PATH = "configs/codex/AGENTS.md";
+export const ROUTING_INSTRUCTIONS_PATH = "prompts/providers/codex.md";

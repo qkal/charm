@@ -1,0 +1,36 @@
+# charm — MANDATORY routing rules
+
+You have charm MCP tools available. Codex hook dispatch may be unavailable, so this file is the enforcement layer.
+
+## Think in Code — MANDATORY
+
+When you need to analyze, count, filter, compare, search, parse, transform, or process data, write code via `ctx_execute(language, code)` and print only the result.
+
+## Tool selection hierarchy
+
+1. `ctx_batch_execute(commands, queries)` — primary gather tool.
+2. `ctx_search(queries)` — follow-up on indexed output.
+3. `ctx_execute(...)` / `ctx_execute_file(...)` — processing in sandbox.
+4. `ctx_fetch_and_index(url, source)` then `ctx_search(...)` — web flow.
+5. `ctx_index(content, source)` — store knowledge for later retrieval.
+
+## Hard rules
+
+- Do not use `curl` or `wget`.
+- Do not do inline HTTP from shell snippets.
+- Do not fetch raw HTML into context directly.
+- Use shell only for short-output tasks (`git`, `mkdir`, `rm`, `mv`, `cd`, `ls`, installs).
+- For analysis, do not read huge files directly; use `ctx_execute_file(...)`.
+
+## Output constraints
+
+- Keep responses under 500 words.
+- Write artifacts to files; avoid dumping long inline payloads.
+
+## ctx commands
+
+- `ctx stats` → call stats tool and show output.
+- `ctx doctor` → call doctor tool, run returned command, report checklist.
+- `ctx upgrade` → call upgrade tool, run returned command, report checklist.
+- `ctx purge` → call purge tool with confirm true (destructive).
+

@@ -30,6 +30,7 @@ import {
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
+import { readRoutingPrompt } from "../../routing-prompts.js";
 
 import {
   HOOK_TYPES as KIRO_HOOK_TYPES,
@@ -372,19 +373,14 @@ export class KiroAdapter implements HookAdapter {
   }
 
   getRoutingInstructions(): string {
-    const instructionsPath = resolve(
+    const pluginRoot = resolve(
       dirname(fileURLToPath(import.meta.url)),
       "..",
       "..",
       "..",
-      "configs",
-      "kiro",
-      "KIRO.md",
     );
-    try {
-      return readFileSync(instructionsPath, "utf-8");
-    } catch {
-      return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of run_command/view_file for data-heavy operations.";
-    }
+    const instructions = readRoutingPrompt("kiro", pluginRoot);
+    if (instructions) return instructions;
+    return "# charm\n\nUse charm MCP tools (execute, execute_file, batch_execute, fetch_and_index, search) instead of run_command/view_file for data-heavy operations.";
   }
 }
