@@ -26,6 +26,7 @@ import type { HookAdapter } from "./adapters/types.js";
 import { loadDatabase } from "./db-base.js";
 import { AnalyticsEngine, formatReport } from "./session/analytics.js";
 import { buildDoctorReport, buildUpgradeMessage } from "./server/diagnostics.js";
+import { resolveClientAdapter } from "./server/client-registration.js";
 import { PolicyEngine } from "./server/execution/policy-engine.js";
 import { ExecutionEffects } from "./server/execution/execution-effects.js";
 import { ExecutionService } from "./server/execution/execution-service.js";
@@ -1512,15 +1513,10 @@ async function main() {
   try { writeFileSync(mcpSentinel, String(process.pid)); } catch { /* best effort */ }
 
   // Detect platform adapter — stored for platform-aware session paths
-  try {
-    const { detectPlatform, getAdapter } = await import("./adapters/detect.js");
-    const clientInfo = server.server.getClientVersion();
-    const signal = detectPlatform(clientInfo ?? undefined);
-    _detectedAdapter = await getAdapter(signal.platform);
-    if (clientInfo) {
-      console.error(`MCP client: ${clientInfo.name} v${clientInfo.version} → ${signal.platform}`);
-    }
-  } catch { /* best effort — _detectedAdapter stays null, falls back to .claude */ }
+  _detectedAdapter = await resolveClientAdapter({
+    getClientVersion: () => server.server.getClientVersion(),
+    log: (message) => console.error(message),
+  });
 
   // Non-blocking version check — result stored for trackResponse warnings
   fetchLatestVersion().then(v => { if (v !== "unknown") _latestVersion = v; });

@@ -1176,7 +1176,7 @@ describe("Platform-aware session paths via adapter", () => {
   test("server stores detected adapter at startup", () => {
     expect(serverSrc).toContain("let _detectedAdapter");
     // main() must assign the adapter after detection
-    expect(serverSrc).toMatch(/_detectedAdapter\s*=\s*await\s+getAdapter/);
+    expect(serverSrc).toMatch(/_detectedAdapter\s*=\s*await\s+resolveClientAdapter/);
   });
 
   // ── No hardcoded .claude in tool handlers ──

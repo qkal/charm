@@ -14,6 +14,12 @@ import {
   ROUTING_BLOCK, READ_GUIDANCE, GREP_GUIDANCE, BASH_GUIDANCE,
   createRoutingBlock, createReadGuidance, createGrepGuidance, createBashGuidance,
 } from "../routing-block.mjs";
+import {
+  createBuildToolRedirectCommand,
+  createCurlWgetBlockedCommand,
+  createInlineHttpBlockedCommand,
+  createWebFetchBlockedReason,
+} from "./guidance-text.mjs";
 import { createToolNamer } from "./tool-naming.mjs";
 import { isMCPReady } from "./mcp-ready.mjs";
 import { existsSync, mkdirSync, rmSync, openSync, closeSync, constants as fsConstants } from "node:fs";
@@ -241,7 +247,7 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform) {
         return mcpRedirect({
           action: "modify",
           updatedInput: {
-            command: `echo "charm: curl/wget blocked. Think in Code — use ${t("ctx_execute")}(language, code) to write code that fetches, processes, and prints only the answer. Or use ${t("ctx_fetch_and_index")}(url, source) to fetch and index. Write pure JS with try/catch, no npm deps. Do NOT retry with curl/wget."`,
+            command: createCurlWgetBlockedCommand(t),
           },
         });
       }
@@ -263,7 +269,7 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform) {
       return mcpRedirect({
         action: "modify",
         updatedInput: {
-          command: `echo "charm: Inline HTTP blocked. Think in Code — use ${t("ctx_execute")}(language, code) to write code that fetches, processes, and console.log() only the result. Write robust pure JS with try/catch, no npm deps. Do NOT retry with Bash."`,
+          command: createInlineHttpBlockedCommand(t),
         },
       });
     }
@@ -271,11 +277,10 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform) {
     // Build tools (gradle, maven) → redirect to execute sandbox (Issue #38).
     // These produce extremely verbose output that should stay in sandbox.
     if (/(^|\s|&&|\||\;)(\.\/gradlew|gradlew|gradle|\.\/mvnw|mvnw|mvn)\s/i.test(stripped)) {
-      const safeCmd = command.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
       return mcpRedirect({
         action: "modify",
         updatedInput: {
-          command: `echo "charm: Build tool redirected. Think in Code — use ${t("ctx_execute")}(language: \\"shell\\", code: \\"${safeCmd} 2>&1 | tail -30\\") to run and print only errors/summary. Do NOT retry with Bash."`,
+          command: createBuildToolRedirectCommand(t, command),
         },
       });
     }
@@ -299,7 +304,7 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform) {
     const url = toolInput.url ?? "";
     return mcpRedirect({
       action: "deny",
-      reason: `charm: WebFetch blocked. Think in Code — use ${t("ctx_fetch_and_index")}(url: "${url}", source: "...") to fetch and index, then ${t("ctx_search")}(queries: [...]) to query. Or use ${t("ctx_execute")}(language, code) to fetch, process, and console.log() only what you need. Write pure JS, no npm deps. Do NOT use curl, wget, or WebFetch.`,
+      reason: createWebFetchBlockedReason(t, url),
     });
   }
 
