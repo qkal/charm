@@ -30,6 +30,7 @@ import { PolicyEngine } from "./server/execution/policy-engine.js";
 import { ExecutionEffects } from "./server/execution/execution-effects.js";
 import { ExecutionService } from "./server/execution/execution-service.js";
 import type { ToolResult } from "./server/execution/contracts.js";
+import { createSearchToolHandler, searchInputSchema } from "./server/tools/search.js";
 import type { ExecResult } from "./types.js";
 import { resolveSecurityMode } from "./security-mode.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
@@ -975,8 +976,10 @@ server.registerTool(
 // ─────────────────────────────────────────────────────────
 
 // Track search calls per 60-second window for progressive throttling
-let searchCallCount = 0;
-let searchWindowStart = Date.now();
+const searchThrottleState = {
+  callCount: 0,
+  windowStartMs: Date.now(),
+};
 const SEARCH_WINDOW_MS = 60_000;
 const SEARCH_MAX_RESULTS_AFTER = 3; // after 3 calls: 1 result per query
 const SEARCH_BLOCK_AFTER = 8; // after 8 calls: refuse, demand batching
@@ -1019,153 +1022,17 @@ server.registerTool(
       "Search indexed content. Requires prior indexing via ctx_batch_execute, ctx_index, or ctx_fetch_and_index. " +
       "Pass ALL search questions as queries array in ONE call.\n\n" +
       "TIPS: 2-4 specific terms per query. Use 'source' to scope results.",
-    inputSchema: z.object({
-      queries: z.preprocess(coerceJsonArray, z
-        .array(z.string())
-        .optional()
-        .describe("Array of search queries. Batch ALL questions in one call.")),
-      limit: z
-        .number()
-        .optional()
-        .default(3)
-        .describe("Results per query (default: 3)"),
-      source: z
-        .string()
-        .optional()
-        .describe("Filter to a specific indexed source (partial match)."),
-      contentType: z
-        .enum(["code", "prose"])
-        .optional()
-        .describe("Filter results by content type: 'code' or 'prose'."),
-    }),
+    inputSchema: searchInputSchema,
   },
-  async (params) => {
-    try {
-      const store = getStore();
-
-      // Guard: redirect when the index is empty — ctx_search is a follow-up
-      // tool that requires prior indexing. Guide the model to the right tool.
-      if (store.getStats().chunks === 0) {
-        return trackResponse("ctx_search", {
-          content: [{
-            type: "text" as const,
-            text: "Knowledge base is empty — no content has been indexed yet.\n\n" +
-              "ctx_search is a follow-up tool that queries previously indexed content. " +
-              "To gather and index content first, use:\n" +
-              "  • ctx_batch_execute(commands, queries) — run commands, auto-index output, and search in one call\n" +
-              "  • ctx_fetch_and_index(url) — fetch a URL, index it, then search with ctx_search\n" +
-              "  • ctx_index(content, source) — manually index text content\n\n" +
-              "After indexing, ctx_search becomes available for follow-up queries.",
-          }],
-          isError: true,
-        });
-      }
-
-      const raw = params as Record<string, unknown>;
-
-      // Normalize: accept both query (string) and queries (array)
-      const queryList: string[] = [];
-      if (Array.isArray(raw.queries) && raw.queries.length > 0) {
-        queryList.push(...(raw.queries as string[]));
-      } else if (typeof raw.query === "string" && raw.query.length > 0) {
-        queryList.push(raw.query as string);
-      }
-
-      if (queryList.length === 0) {
-        return trackResponse("ctx_search", {
-          content: [{ type: "text" as const, text: "Error: provide query or queries." }],
-          isError: true,
-        });
-      }
-
-      const { limit = 3, source, contentType } = params as { limit?: number; source?: string; contentType?: "code" | "prose" };
-
-      // Progressive throttling: track calls in time window
-      const now = Date.now();
-      if (now - searchWindowStart > SEARCH_WINDOW_MS) {
-        searchCallCount = 0;
-        searchWindowStart = now;
-      }
-      searchCallCount++;
-
-      // After SEARCH_BLOCK_AFTER calls: refuse
-      if (searchCallCount > SEARCH_BLOCK_AFTER) {
-        return trackResponse("ctx_search", {
-          content: [{
-            type: "text" as const,
-            text: `BLOCKED: ${searchCallCount} search calls in ${Math.round((now - searchWindowStart) / 1000)}s. ` +
-              "You're flooding context. STOP making individual search calls. " +
-              "Use batch_execute(commands, queries) for your next research step.",
-          }],
-          isError: true,
-        });
-      }
-
-      // Determine per-query result limit based on throttle level
-      const effectiveLimit = searchCallCount > SEARCH_MAX_RESULTS_AFTER
-        ? 1 // after 3 calls: only 1 result per query
-        : Math.min(limit, 2); // normal: max 2
-
-      const MAX_TOTAL = 40 * 1024; // 40KB total cap
-      let totalSize = 0;
-      const sections: string[] = [];
-
-      for (const q of queryList) {
-        if (totalSize > MAX_TOTAL) {
-          sections.push(`## ${q}\n(output cap reached)\n`);
-          continue;
-        }
-
-        const results = store.searchWithFallback(q, effectiveLimit, source, contentType);
-
-        if (results.length === 0) {
-          sections.push(`## ${q}\nNo results found.`);
-          continue;
-        }
-
-        const formatted = results
-          .map((r, i) => {
-            const header = `--- [${r.source}] ---`;
-            const heading = `### ${r.title}`;
-            const snippet = extractSnippet(r.content, q, 1500, r.highlighted);
-            return `${header}\n${heading}\n\n${snippet}`;
-          })
-          .join("\n\n");
-
-        sections.push(`## ${q}\n\n${formatted}`);
-        totalSize += formatted.length;
-      }
-
-      let output = sections.join("\n\n---\n\n");
-
-      // Add throttle warning after threshold
-      if (searchCallCount >= SEARCH_MAX_RESULTS_AFTER) {
-        output += `\n\n⚠ search call #${searchCallCount}/${SEARCH_BLOCK_AFTER} in this window. ` +
-          `Results limited to ${effectiveLimit}/query. ` +
-          `Batch queries: search(queries: ["q1","q2","q3"]) or use batch_execute.`;
-      }
-
-      if (output.trim().length === 0) {
-        const sources = store.listSources();
-        const sourceList = sources.length > 0
-          ? `\nIndexed sources: ${sources.map((s) => `"${s.label}" (${s.chunkCount} sections)`).join(", ")}`
-          : "";
-        return trackResponse("ctx_search", {
-          content: [{ type: "text" as const, text: `No results found.${sourceList}` }],
-        });
-      }
-
-      return trackResponse("ctx_search", {
-        content: [{ type: "text" as const, text: output }],
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return trackResponse("ctx_search", {
-        content: [{ type: "text" as const, text: `Search error: ${message}` }],
-        isError: true,
-      });
-    }
-  },
+  createSearchToolHandler({
+    getStore,
+    trackResponse,
+    extractSnippet,
+    throttleState: searchThrottleState,
+    searchWindowMs: SEARCH_WINDOW_MS,
+    searchMaxResultsAfter: SEARCH_MAX_RESULTS_AFTER,
+    searchBlockAfter: SEARCH_BLOCK_AFTER,
+  }),
 );
 
 // ─────────────────────────────────────────────────────────
