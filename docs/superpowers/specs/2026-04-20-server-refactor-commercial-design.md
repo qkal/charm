@@ -101,11 +101,19 @@ Optional adjacent extraction for consistency after hot paths stabilize:
 1. Performance gate:
    - `ctx_search` p95 `<= 0.75 * baseline`
    - `ctx_batch_execute` p95 `<= 0.75 * baseline`
+   - Absolute SLO caps on benchmark profile:
+     - `ctx_search` p95 `<= 250ms`, p99 `<= 500ms`
+     - `ctx_batch_execute` p95 `<= 1200ms`, p99 `<= 2500ms`
    - `p99` non-regression threshold enforced
-   - Repeat-run variance threshold enforced
+   - Repeat-run variance threshold enforced (`CV <= 10%` across measured runs)
 2. Reliability gate:
    - Error rate non-regression under identical benchmark profile
-   - Defined automatic rollback trigger
+   - Automatic rollback trigger during staged rollout:
+     - Trigger if any condition fails for 2 consecutive 5-minute windows:
+       - p95 exceeds cap by `>10%`
+       - p99 regresses by `>20%` vs baseline
+       - Error rate `> baseline + 0.5pp` or `>2x baseline` (whichever is stricter)
+   - Rollback decision and execution must complete within 15 minutes of confirmed trigger
 3. Cross-platform gate:
    - Required CI matrix pass on Windows, Linux, macOS for hot-path changes
 4. Compatibility gate:
@@ -119,8 +127,14 @@ Optional adjacent extraction for consistency after hot paths stabilize:
    - Tool-level latency/error metrics present and validated
 7. Supply-chain compliance gate:
    - SBOM artifact generated
-   - License-policy checks pass
-   - Dependency vulnerability policy enforced
+   - SBOM format is CycloneDX JSON and is attached to release artifact bundle
+   - License-policy checks pass:
+     - Allowed by default: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+     - Denied by default: GPL-3.0, AGPL-3.0, SSPL (unless approved exception)
+   - Dependency vulnerability policy enforced:
+     - Block release on any open Critical vulnerability
+     - Block release on any open High vulnerability without approved time-bound exception
+   - All exceptions require Security + Product sign-off and expiration date (max 30 days)
 8. Security operations gate:
    - Incident runbook attached to release
    - Named on-call and rollback authority
@@ -129,7 +143,11 @@ Optional adjacent extraction for consistency after hot paths stabilize:
    - Retention + redaction policy documented and tested
 10. Business continuity gate:
    - Backup/restore verification for stateful components
-   - DR drill cadence documented
+   - DR drill cadence documented and executed at least quarterly
+   - Recovery objectives defined and validated:
+     - `RTO <= 60 minutes`
+     - `RPO <= 15 minutes`
+   - At least one successful restore drill in the last 90 days is required for release
 11. Auditability gate:
    - Immutable release artifact bundle linked to version tag
 12. Change-control gate:
@@ -148,8 +166,8 @@ Optional adjacent extraction for consistency after hot paths stabilize:
 
 1. Baseline snapshot recorded before refactor.
 2. Fixed benchmark datasets and command/query fixtures.
-3. Fixed warmup and iteration count.
-4. Multiple repeated runs with variance thresholds.
+3. Fixed warmup and iteration count (`warmup=5`, `measured=30` per tool/profile).
+4. Multiple repeated runs (`>=5 benchmark rounds`) with variance thresholds (`CV <= 10%`).
 5. Report includes p50, p95, p99, error rate, and environment metadata.
 6. Gate compares like-for-like runtime/OS conditions.
 
@@ -163,6 +181,7 @@ Progressive deployment stages:
 4. 100%
 
 Promotion requires all gates green at each stage. Automatic rollback on breach of latency/error thresholds.
+Each stage requires at least 24 hours of stable observation before promotion.
 
 ## 10. Cross-Platform Reliability Phase (After Complexity Refactor)
 
@@ -170,6 +189,12 @@ Promotion requires all gates green at each stage. Automatic rollback on breach o
 2. Stabilize filesystem/path behavior across OSes.
 3. Validate hook and lifecycle behavior parity in matrix tests.
 4. Add platform-specific regressions to permanent CI suites.
+
+Exit criteria for this phase:
+
+1. Required CI matrix has 10 consecutive green runs (Windows/Linux/macOS).
+2. Flake rate in release-blocking suites is `<2%` over the most recent 20 matrix runs.
+3. No unresolved platform-blocking skips remain in release-blocking suites.
 
 ## 11. Risks and Mitigations
 
