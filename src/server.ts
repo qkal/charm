@@ -31,6 +31,7 @@ import { ExecutionEffects } from "./server/execution/execution-effects.js";
 import { ExecutionService } from "./server/execution/execution-service.js";
 import type { ToolResult } from "./server/execution/contracts.js";
 import { createSearchToolHandler, searchInputSchema } from "./server/tools/search.js";
+import { batchExecuteInputSchema, createBatchExecuteToolHandler } from "./server/tools/batch-execute.js";
 import type { ExecResult } from "./types.js";
 import { resolveSecurityMode } from "./security-mode.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
@@ -984,36 +985,6 @@ const SEARCH_WINDOW_MS = 60_000;
 const SEARCH_MAX_RESULTS_AFTER = 3; // after 3 calls: 1 result per query
 const SEARCH_BLOCK_AFTER = 8; // after 8 calls: refuse, demand batching
 
-/**
- * Defensive coercion: parse stringified JSON arrays.
- * Works around Claude Code double-serialization bug where array params
- * are sent as JSON strings (e.g. "[\"a\",\"b\"]" instead of ["a","b"]).
- * See: https://github.com/anthropics/claude-code/issues/34520
- */
-function coerceJsonArray(val: unknown): unknown {
-  if (typeof val === "string") {
-    try {
-      const parsed = JSON.parse(val);
-      if (Array.isArray(parsed)) return parsed;
-    } catch { /* not valid JSON, let zod handle the error */ }
-  }
-  return val;
-}
-
-/**
- * Coerce commands array: handles double-serialization AND the case where
- * the model passes plain command strings instead of {label, command} objects.
- */
-function coerceCommandsArray(val: unknown): unknown {
-  const arr = coerceJsonArray(val);
-  if (Array.isArray(arr)) {
-    return arr.map((item, i) =>
-      typeof item === "string" ? { label: `cmd_${i + 1}`, command: item } : item
-    );
-  }
-  return arr;
-}
-
 server.registerTool(
   "ctx_search",
   {
@@ -1288,177 +1259,21 @@ server.registerTool(
       "One batch_execute call replaces 30+ execute calls + 10+ search calls.\n" +
       "Provide all commands to run and all queries to search — everything happens in one round trip.\n\n" +
       "THINK IN CODE: When commands produce data you need to analyze, add processing commands that filter and summarize. Don't pull raw output into context — let the sandbox do the work.",
-    inputSchema: z.object({
-      commands: z.preprocess(coerceCommandsArray, z
-        .array(
-          z.object({
-            label: z
-              .string()
-              .describe(
-                "Section header for this command's output (e.g., 'README', 'Package.json', 'Source Tree')",
-              ),
-            command: z
-              .string()
-              .describe("Shell command to execute"),
-          }),
-        )
-        .min(1)
-        .describe(
-          "Commands to execute as a batch. Each runs sequentially, output is labeled with the section header.",
-        )),
-      queries: z.preprocess(coerceJsonArray, z
-        .array(z.string())
-        .min(1)
-        .describe(
-          "Search queries to extract information from indexed output. Use 5-8 comprehensive queries. " +
-          "Each returns top 5 matching sections with full content. " +
-          "This is your ONLY chance — put ALL your questions here. No follow-up calls needed.",
-        )),
-      timeout: z
-        .coerce.number()
-        .optional()
-        .default(60000)
-        .describe("Max execution time in ms (default: 60s)"),
-    }),
+    inputSchema: batchExecuteInputSchema,
   },
-  async ({ commands, queries, timeout }) => {
-    // Security: check each command against deny patterns
-    for (const cmd of commands) {
-      const denied = checkDenyPolicy(cmd.command, "batch_execute");
-      if (denied) return denied;
-    }
-
-    try {
-      // Execute each command individually so every command gets its own
-      // output capture. Full stdout is preserved and indexed into FTS5.
-      // (Issue #61, #197)
-      const perCommandOutputs: string[] = [];
-      const startTime = Date.now();
-      let timedOut = false;
-
-      // Inject NODE_OPTIONS for FS read tracking in spawned Node processes.
-      // The executor denies NODE_OPTIONS in its env (security), so we set it
-      // as an inline shell prefix. This only affects child `node` invocations.
-      const nodeOptsPrefix = `NODE_OPTIONS="--require ${CM_FS_PRELOAD}" `;
-
-      for (const cmd of commands) {
-        const elapsed = Date.now() - startTime;
-        const remaining = timeout - elapsed;
-        if (remaining <= 0) {
-          perCommandOutputs.push(
-            `# ${cmd.label}\n\n(skipped — batch timeout exceeded)\n`,
-          );
-          timedOut = true;
-          continue;
-        }
-
-        const result = await executor.execute({
-          language: "shell",
-          code: `${nodeOptsPrefix}${cmd.command} 2>&1`,
-          timeout: remaining,
-        });
-
-        let output = result.stdout || "(no output)";
-
-        // Parse and strip __CM_FS__ markers emitted by the preload script.
-        // Because 2>&1 merges stderr into stdout, markers appear in output.
-        const fsMatches = output.matchAll(/__CM_FS__:(\d+)/g);
-        let cmdFsBytes = 0;
-        for (const m of fsMatches) cmdFsBytes += parseInt(m[1]);
-        if (cmdFsBytes > 0) {
-          sessionStats.bytesSandboxed += cmdFsBytes;
-          output = output.replace(/__CM_FS__:\d+\n?/g, "");
-        }
-
-        perCommandOutputs.push(`# ${cmd.label}\n\n${output}\n`);
-
-        if (result.timedOut) {
-          timedOut = true;
-          // Mark remaining commands as skipped
-          const idx = commands.indexOf(cmd);
-          for (let i = idx + 1; i < commands.length; i++) {
-            perCommandOutputs.push(
-              `# ${commands[i].label}\n\n(skipped — batch timeout exceeded)\n`,
-            );
-          }
-          break;
-        }
-      }
-
-      const stdout = perCommandOutputs.join("\n");
-      const totalBytes = Buffer.byteLength(stdout);
-      const totalLines = stdout.split("\n").length;
-
-      if (timedOut && perCommandOutputs.length === 0) {
-        return trackResponse("ctx_batch_execute", {
-          content: [
-            {
-              type: "text" as const,
-              text: `Batch timed out after ${timeout}ms. No output captured.`,
-            },
-          ],
-          isError: true,
-        });
-      }
-
-      // Track indexed bytes (raw data that stays in sandbox)
-      trackIndexed(totalBytes);
-
-      // Index into knowledge base — markdown heading chunking splits by # labels
-      const store = getStore();
-      const source = `batch:${commands
-        .map((c) => c.label)
-        .join(",")
-        .slice(0, 80)}`;
-      const indexed = store.index({ content: stdout, source });
-
-      // Build section inventory — direct query by source_id (no FTS5 MATCH needed)
-      const allSections = store.getChunksBySource(indexed.sourceId);
-      const inventory: string[] = ["## Indexed Sections", ""];
-      const sectionTitles: string[] = [];
-      for (const s of allSections) {
-        const bytes = Buffer.byteLength(s.content);
-        inventory.push(`- ${s.title} (${(bytes / 1024).toFixed(1)}KB)`);
-        sectionTitles.push(s.title);
-      }
-
-      // Run all search queries — source scoped only.
-      // Cross-source search remains available via explicit search().
-      const queryResults = formatBatchQueryResults(store, queries, source);
-
-      // Get searchable terms for edge cases where follow-up is needed
-      const distinctiveTerms = store.getDistinctiveTerms
-        ? store.getDistinctiveTerms(indexed.sourceId)
-        : [];
-
-      const output = [
-        `Executed ${commands.length} commands (${totalLines} lines, ${(totalBytes / 1024).toFixed(1)}KB). ` +
-          `Indexed ${indexed.totalChunks} sections. Searched ${queries.length} queries.`,
-        "",
-        ...inventory,
-        "",
-        ...queryResults,
-        distinctiveTerms.length > 0
-          ? `\nSearchable terms for follow-up: ${distinctiveTerms.join(", ")}`
-          : "",
-      ].join("\n");
-
-      return trackResponse("ctx_batch_execute", {
-        content: [{ type: "text" as const, text: output }],
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return trackResponse("ctx_batch_execute", {
-        content: [
-          {
-            type: "text" as const,
-            text: `Batch execution error: ${message}`,
-          },
-        ],
-        isError: true,
-      });
-    }
-  },
+  createBatchExecuteToolHandler({
+    checkDenyPolicy,
+    executorExecute: ({ language, code, timeout }) =>
+      executor.execute({ language, code, timeout }),
+    trackResponse,
+    trackIndexed,
+    getStore,
+    formatBatchQueryResults,
+    cmFsPreloadPath: CM_FS_PRELOAD,
+    onSandboxedFsBytes: (bytes) => {
+      sessionStats.bytesSandboxed += bytes;
+    },
+  }),
 );
 
 // ─────────────────────────────────────────────────────────

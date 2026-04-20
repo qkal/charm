@@ -1512,6 +1512,10 @@ describe("batch_execute FS read tracking", () => {
     resolve(__dirname, "../../src/server.ts"),
     "utf-8",
   );
+  const batchToolSrc = readFileSync(
+    resolve(__dirname, "../../src/server/tools/batch-execute.ts"),
+    "utf-8",
+  );
 
   test("creates CM_FS_PRELOAD temp file with FS tracking script", () => {
     expect(serverSrc).toContain("CM_FS_PRELOAD");
@@ -1521,17 +1525,18 @@ describe("batch_execute FS read tracking", () => {
   });
 
   test("sets NODE_OPTIONS with --require for batch commands", () => {
-    expect(serverSrc).toContain('NODE_OPTIONS="--require ${CM_FS_PRELOAD}"');
-    expect(serverSrc).toContain("nodeOptsPrefix");
+    expect(batchToolSrc).toContain('NODE_OPTIONS="--require ${deps.cmFsPreloadPath}"');
+    expect(batchToolSrc).toContain("nodeOptsPrefix");
   });
 
   test("parses __CM_FS__ from batch output and updates bytesSandboxed", () => {
-    expect(serverSrc).toContain("/__CM_FS__:(\\d+)/g");
-    expect(serverSrc).toContain("sessionStats.bytesSandboxed += cmdFsBytes");
+    expect(batchToolSrc).toContain("/__CM_FS__:(\\d+)/g");
+    expect(batchToolSrc).toContain("deps.onSandboxedFsBytes?.(cmdFsBytes)");
+    expect(serverSrc).toContain("sessionStats.bytesSandboxed += bytes");
   });
 
   test("strips __CM_FS__ markers from batch command output", () => {
-    expect(serverSrc).toContain('output.replace(/__CM_FS__:\\d+\\n?/g, "")');
+    expect(batchToolSrc).toContain('output.replace(/__CM_FS__:\\d+\\n?/g, "")');
   });
 
   test("cleans up preload file on shutdown", () => {
