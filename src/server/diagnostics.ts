@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadDatabase } from "../db-base.js";
 import { PolyglotExecutor } from "../executor.js";
@@ -101,79 +101,27 @@ export async function buildUpgradeMessage(opts: {
   pkgDir: string;
 }): Promise<string> {
   const pluginRoot = resolvePluginRoot(opts.pkgDir);
-  const bundlePath = resolve(pluginRoot, "cli.bundle.mjs");
-  const fallbackPath = resolve(pluginRoot, "build", "cli.js");
-
-  let cmd: string;
-
-  if (existsSync(bundlePath)) {
-    cmd = `node "${bundlePath}" upgrade`;
-  } else if (existsSync(fallbackPath)) {
-    cmd = `node "${fallbackPath}" upgrade`;
-  } else {
-    const repoUrl = "https://github.com/lovablia/charm.git";
-    const copyDirs = ["build", "hooks", "skills", "scripts", ".claude-plugin"];
-    const copyFiles = ["start.mjs", "server.bundle.mjs", "cli.bundle.mjs", "package.json"];
-
-    const scriptLines = [
-      `import{execFileSync}from"node:child_process";`,
-      `import{cpSync,rmSync,existsSync,mkdtempSync}from"node:fs";`,
-      `import{join}from"node:path";`,
-      `import{tmpdir}from"node:os";`,
-      `const P=${JSON.stringify(pluginRoot)};`,
-      `const T=mkdtempSync(join(tmpdir(),"ctx-upgrade-"));`,
-      `try{`,
-      `console.log("- [x] Starting inline upgrade (no CLI found)");`,
-      `execFileSync("git",["clone","--depth","1","${repoUrl}",T],{stdio:"inherit"});`,
-      `console.log("- [x] Cloned latest source");`,
-      `execFileSync("npm",["install"],{cwd:T,stdio:"inherit"});`,
-      `execFileSync("npm",["run","build"],{cwd:T,stdio:"inherit"});`,
-      `console.log("- [x] Built from source");`,
-      ...copyDirs.map(
-        (dirName) =>
-          `if(existsSync(join(T,${JSON.stringify(dirName)})))cpSync(join(T,${JSON.stringify(dirName)}),join(P,${JSON.stringify(dirName)}),{recursive:true,force:true});`,
-      ),
-      ...copyFiles.map(
-        (fileName) =>
-          `if(existsSync(join(T,${JSON.stringify(fileName)})))cpSync(join(T,${JSON.stringify(fileName)}),join(P,${JSON.stringify(fileName)}),{force:true});`,
-      ),
-      `console.log("- [x] Copied build artifacts");`,
-      `execFileSync("npm",["install","--production"],{cwd:P,stdio:"inherit"});`,
-      `console.log("- [x] Installed production dependencies");`,
-      `console.log("## charm upgrade complete");`,
-      `}catch(e){`,
-      `console.error("- [ ] Upgrade failed:",e.message);`,
-      `process.exit(1);`,
-      `}finally{`,
-      `try{rmSync(T,{recursive:true,force:true})}catch{}`,
-      `}`,
-    ].join("\n");
-
-    const tmpScript = resolve(pluginRoot, ".ctx-upgrade-inline.mjs");
-    writeFileSync(tmpScript, scriptLines);
-    cmd = `node "${tmpScript}"`;
-  }
+  const bootstrapUrl = "https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm";
+  const providerPattern = "https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/<provider>.md";
 
   return [
     "## ctx-upgrade",
     "",
-    "Run this command using your shell execution tool:",
+    "NPM-based upgrade/install is currently disabled in this beta.",
     "",
-    "```",
-    cmd,
+    "Use prompt-based bootstrap instead:",
+    "",
+    `- Bootstrap prompt: ${bootstrapUrl}`,
+    `- Provider prompts: ${providerPattern}`,
+    "",
+    "Example instruction:",
+    "",
+    "```text",
+    `Fetch and follow instructions from ${bootstrapUrl}`,
     "```",
     "",
-    "After the command completes, display results as a markdown checklist:",
-    "- `[x]` for success, `[ ]` for failure",
-    "- Example format:",
-    "  ```",
-    "  ## charm upgrade",
-    "  - [x] Pulled latest from GitHub",
-    "  - [x] Built and installed v0.9.24",
-    "  - [x] npm global updated",
-    "  - [x] Hooks configured",
-    "  - [x] Doctor: all checks PASS",
-    "  ```",
-    "- Tell the user to restart their session to pick up the new version.",
+    "After bootstrap, restart your agent/IDE session.",
+    "",
+    `Detected plugin root: ${pluginRoot}`,
   ].join("\n");
 }

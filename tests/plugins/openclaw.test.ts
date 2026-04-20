@@ -270,7 +270,7 @@ describe("OpenClawPlugin", () => {
       const mock = await createTestPlugin(join(tempDir, "cmd-upgrade"));
       const upgradeCmd = mock.commands.find((c) => c.name === "ctx-upgrade");
       expect(upgradeCmd).toBeDefined();
-      expect(upgradeCmd!.description).toContain("Upgrade");
+      expect(upgradeCmd!.description).toContain("bootstrap");
     });
 
     it("ctx-stats handler returns session stats text", async () => {
@@ -289,12 +289,13 @@ describe("OpenClawPlugin", () => {
       expect(result.text).toContain("doctor");
     });
 
-    it("ctx-upgrade handler returns upgrade command", async () => {
+    it("ctx-upgrade handler returns prompt-bootstrap guidance", async () => {
       const mock = await createTestPlugin(join(tempDir, "cmd-upgrade-run"));
       const upgradeCmd = mock.commands.find((c) => c.name === "ctx-upgrade");
       const result = await upgradeCmd!.handler({});
       expect(result.text).toContain("ctx-upgrade");
-      expect(result.text).toContain("upgrade");
+      expect(result.text).toContain("NPM-based upgrade/install is currently disabled");
+      expect(result.text).toContain("raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
       expect(result.text).toContain("Restart");
     });
   });

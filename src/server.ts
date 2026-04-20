@@ -253,11 +253,7 @@ async function fetchLatestVersion(): Promise<string> {
 }
 
 function getUpgradeHint(): string {
-  const name = _detectedAdapter?.name;
-  if (name === "Claude Code") return "/ctx-upgrade";
-  if (name === "OpenClaw") return "npm run install:openclaw";
-  if (name === "Pi") return "npm run build";
-  return "npm update -g charm";
+  return "Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm";
 }
 
 function isOutdated(): boolean {
@@ -1697,10 +1693,9 @@ server.registerTool(
   {
     title: "Upgrade Plugin",
     description:
-      "Upgrade charm to the latest version. Returns a shell command to execute. " +
-      "You MUST run the returned command using your shell tool (Bash, shell_execute, " +
-      "run_in_terminal, etc.) and display the output as a checklist. " +
-      "Tell the user to restart their session after upgrade.",
+      "Show prompt-based Charm bootstrap instructions. " +
+      "NPM-based install/upgrade is disabled in this beta. " +
+      "After re-running bootstrap, restart the user session.",
     inputSchema: z.object({}),
   },
   async () => {

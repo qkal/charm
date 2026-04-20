@@ -10,19 +10,17 @@ Charm is in public beta preparation mode. This branch targets release-candidate 
 - Explicit security mode behavior (`compat` vs `strict`)
 - Automated release-readiness checklist artifacts
 
-## Install
+## Install (Prompt-Only)
 
-### Option 1: Global install (recommended for daily use)
+Charm currently supports onboarding through standalone prompts only.
 
-```bash
-npm install -g charm
-```
+- Bootstrap prompt: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm`
+- Provider prompts: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/<provider>.md`
 
-### Option 2: Local development install
+Example user instruction:
 
-```bash
-npm install
-npm run build
+```text
+Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm
 ```
 
 ## Quick Start
@@ -40,19 +38,6 @@ charm release-check
 ```
 
 3. For MCP usage in this repo, `.mcp.json` already points to `start.mjs`.
-
-## Standalone Prompt Install
-
-Charm now ships standalone markdown prompts per provider plus a universal bootstrap file.
-
-- Bootstrap prompt: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm`
-- Provider prompts: `https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/<provider>.md`
-
-Example user instruction:
-
-```text
-Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm
-```
 
 ## Supported Platforms
 
@@ -75,7 +60,6 @@ Charm includes adapter/config coverage for:
 | --- | --- |
 | `charm` | Start MCP server over stdio |
 | `charm doctor` | Adapter-aware diagnostics (runtimes, hooks, FTS5, versions, security mode) |
-| `charm upgrade` | Adapter-aware self-repair and upgrade |
 | `charm release-check [--ci]` | Run RC checklist and emit artifacts |
 | `charm insight [port]` | Open analytics dashboard |
 
@@ -100,8 +84,7 @@ These artifacts are also uploaded by the `release-readiness` GitHub Actions work
 ## Troubleshooting
 
 - Run `charm doctor` first for environment issues.
-- Run `charm upgrade` if diagnostics suggest drifted hooks/config.
-- If native SQLite bindings fail, run `npm rebuild better-sqlite3`.
+- Re-run the bootstrap prompt instruction to refresh adapter setup and hooks.
 
 ## Docs Index
 

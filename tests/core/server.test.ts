@@ -1068,10 +1068,10 @@ if (LIVE) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ctx_upgrade: inline fallback for missing CLI files
+// ctx_upgrade: prompt-only bootstrap instructions
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe("ctx_upgrade tool: inline fallback for missing CLI", () => {
+describe("ctx_upgrade tool: prompt-only bootstrap", () => {
   const serverSrc = readFileSync(
     resolve(__dirname, "../../src/server.ts"),
     "utf-8",
@@ -1081,33 +1081,17 @@ describe("ctx_upgrade tool: inline fallback for missing CLI", () => {
     "utf-8",
   );
 
-  test("tries cli.bundle.mjs first", () => {
+  test("ctx_upgrade delegates to buildUpgradeMessage", () => {
     expect(serverSrc).toContain("buildUpgradeMessage");
-    expect(diagnosticsSrc).toContain("cli.bundle.mjs");
-    expect(diagnosticsSrc).toMatch(/existsSync\(bundlePath\)/);
+    expect(diagnosticsSrc).toContain("function buildUpgradeMessage");
   });
 
-  test("tries build/cli.js second", () => {
-    expect(diagnosticsSrc).toContain('resolve(pluginRoot, "build", "cli.js")');
+  test("diagnostics message marks npm flow as disabled", () => {
+    expect(diagnosticsSrc).toContain("NPM-based upgrade/install is currently disabled");
   });
 
-  test("contains inline fallback with git clone when neither CLI file exists", () => {
-    // The fallback must generate an inline script with git clone via execFileSync
-    expect(diagnosticsSrc).toMatch(/git.*clone.*--depth.*1/);
-    // The inline script is written to a temp .mjs file
-    expect(diagnosticsSrc).toMatch(/\.ctx-upgrade-inline\.mjs/);
-  });
-
-  test("inline fallback copies key files to plugin root", () => {
-    // The inline script must copy build artifacts back
-    expect(diagnosticsSrc).toMatch(/server\.bundle\.mjs/);
-    expect(diagnosticsSrc).toMatch(/cli\.bundle\.mjs/);
-    expect(diagnosticsSrc).toMatch(/npm.*install/);
-  });
-
-  test("fallback only triggers when neither CLI file exists", () => {
-    // There should be an else/fallback branch after checking both paths
-    expect(diagnosticsSrc).toMatch(/existsSync\(fallbackPath\)/);
+  test("diagnostics message includes bootstrap URL", () => {
+    expect(diagnosticsSrc).toContain("raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
   });
 });
 
@@ -1479,14 +1463,9 @@ describe("Version outdated warning in trackResponse", () => {
     expect(serverSrc).toContain("_warningBurstCount");
   });
 
-  test("getUpgradeHint returns platform-specific command", () => {
+  test("getUpgradeHint returns prompt-bootstrap guidance", () => {
     expect(serverSrc).toContain("function getUpgradeHint");
-    // Claude Code gets slash command
-    expect(serverSrc).toMatch(/claude.code.*ctx.upgrade|ctx.upgrade.*claude.code/i);
-    // npm platforms get npm update
-    expect(serverSrc).toContain("npm update -g charm");
-    // OpenClaw gets its own command
-    expect(serverSrc).toContain("npm run install:openclaw");
+    expect(serverSrc).toContain("Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
   });
 });
 

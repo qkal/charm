@@ -5,7 +5,7 @@
  * Usage:
  *   charm                              → Start MCP server (stdio)
  *   charm doctor                       → Diagnose runtime issues, hooks, FTS5, version
- *   charm upgrade                      → Fix hooks, permissions, and settings
+ *   charm upgrade                      → Show prompt-only bootstrap guidance (npm flow disabled)
  *   charm release-check [--ci]         → Run release-readiness checklist and emit artifacts
  *   charm hook <platform> <event>      → Dispatch a hook script (used by platform hook configs)
  *
@@ -587,6 +587,20 @@ async function upgrade() {
     `Platform: ${color.cyan(adapter.name)}` +
       color.dim(` (${detection.confidence} confidence)`),
   );
+  p.log.warn(
+    color.yellow("NPM-based upgrade is currently disabled for this beta."),
+  );
+  p.note(
+    [
+      "Use prompt-based bootstrap to refresh/install Charm:",
+      "",
+      "Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm",
+      "",
+      "Restart your agent/IDE session after re-running bootstrap.",
+    ].join("\n"),
+    "Prompt-only installation",
+  );
+  return;
 
   let pluginRoot = getPluginRoot();
   const changes: string[] = [];
@@ -697,7 +711,7 @@ async function upgrade() {
         s.stop(color.green("Native addons rebuilt"));
         changes.push("Rebuilt better-sqlite3 for current Node.js");
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = String(err);
         s.stop(color.yellow("Native addon rebuild warning"));
         p.log.warn(
           color.yellow("better-sqlite3 rebuild issue") +
@@ -756,7 +770,7 @@ async function upgrade() {
         color.dim(` — v${newVersion}`),
     );
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = String(err);
     s.stop(color.red("Update failed"));
     p.log.error(color.red("GitHub pull failed") + ` — ${message}`);
     p.log.info(color.dim("Continuing with hooks/settings fix..."));

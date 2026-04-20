@@ -28,7 +28,6 @@
     ".mcp.json",
     "start.mjs",
     "scripts/release-readiness.mjs",
-    "scripts/postinstall.mjs",
     "charm",
     "README.md",
     "LICENSE"
@@ -52,8 +51,7 @@
     "test:use-cases": "npx tsx tests/use-cases.ts",
     "test:compare": "npx tsx tests/context-comparison.ts",
     "test:ecosystem": "npx tsx tests/ecosystem-benchmark.ts",
-    "postinstall": "node scripts/postinstall.mjs",
-    "install:openclaw": "node cli.bundle.mjs upgrade"
+    "postinstall": "echo \"Charm: npm install flow is disabled; use prompt bootstrap from ./charm\""
   },
   "dependencies": {
     "@clack/prompts": "^1.0.1",

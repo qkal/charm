@@ -695,18 +695,14 @@ describe("Cross-OS compatibility", () => {
     expect(pkg.scripts.build).not.toMatch(/\bchmod\s+\+x\b/);
   });
 
-  it("postinstall script uses node for cross-platform compatibility", () => {
-    // POSIX [ -n ... ] && printf || true fails on Windows cmd.exe
-    expect(pkg.scripts.postinstall).not.toMatch(/\[ -n/);
-    expect(pkg.scripts.postinstall).not.toContain("printf");
-    expect(pkg.scripts.postinstall).toMatch(/^node /);
-    // postinstall.mjs must be in files array for npm publish
-    expect(pkg.files).toContain("scripts/postinstall.mjs");
+  it("postinstall script is a prompt-only notice", () => {
+    expect(pkg.scripts.postinstall).toContain("prompt bootstrap");
+    expect(pkg.scripts.postinstall).not.toContain("npm install -g");
+    expect(pkg.files).not.toContain("scripts/postinstall.mjs");
   });
 
-  it("install:openclaw gracefully handles missing bash on Windows", () => {
-    // Direct 'bash' invocation fails on Windows without Git Bash
-    expect(pkg.scripts["install:openclaw"]).not.toMatch(/^bash /);
+  it("install:openclaw script is removed in prompt-only mode", () => {
+    expect(pkg.scripts["install:openclaw"]).toBeUndefined();
   });
 
   it("cli.ts chmodSync in setup/upgrade is guarded by platform check", () => {
@@ -743,12 +739,13 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     expect(diagnosticsSrc).toContain("FTS5");
   });
 
-  it("server.ts ctx_upgrade uses cli.bundle.mjs with fallback", () => {
+  it("server.ts ctx_upgrade points to prompt bootstrap flow", () => {
     const src = readFileSync(resolve(ROOT, "src", "server.ts"), "utf-8");
-    // ctx_upgrade handler must prefer cli.bundle.mjs
+    // ctx_upgrade handler uses server-side diagnostics helper
     const upgradeSection = src.slice(src.indexOf("ctx_upgrade"), src.indexOf("ctx_upgrade") + 800);
     expect(upgradeSection).toContain("buildUpgradeMessage");
-    expect(diagnosticsSrc).toContain("cli.bundle.mjs");
+    expect(diagnosticsSrc).toContain("NPM-based upgrade/install is currently disabled");
+    expect(diagnosticsSrc).toContain("raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
   });
 
   it("ctx_doctor diagnostics include security mode reporting", () => {
@@ -767,7 +764,7 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     expect(src).toContain("resources: []");
   });
 
-  it("openclaw-plugin.ts doctor/upgrade use cli.bundle.mjs with fallback", () => {
+  it("openclaw-plugin.ts doctor uses CLI, upgrade returns prompt bootstrap", () => {
     const src = readFileSync(resolve(ROOT, "src", "openclaw-plugin.ts"), "utf-8");
     expect(src).toContain("cli.bundle.mjs");
     // Find the registerCommand blocks, not comments
@@ -778,7 +775,8 @@ describe("Bin entry uses cli.bundle.mjs", () => {
     const doctorSection = src.slice(doctorIdx, doctorIdx + 500);
     const upgradeSection = src.slice(upgradeIdx, upgradeIdx + 500);
     expect(doctorSection).toContain("cli.bundle.mjs");
-    expect(upgradeSection).toContain("cli.bundle.mjs");
+    expect(upgradeSection).toContain("NPM-based upgrade/install is currently disabled");
+    expect(upgradeSection).toContain("raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
   });
 });
 
@@ -947,10 +945,9 @@ describe("Shell-free upgrade (#185)", () => {
     expect(upgradeBody).toContain("chmodSync");
   });
 
-  test("server.ts inline fallback uses execFileSync, not execSync", () => {
-    // The inline script template now lives in the extracted diagnostics module.
-    expect(DIAGNOSTICS_SOURCE).toContain("execFileSync");
-    expect(DIAGNOSTICS_SOURCE).not.toMatch(/(?<!File)execSync/);
+  test("server.ts upgrade messaging is prompt-only and shell-free", () => {
+    expect(DIAGNOSTICS_SOURCE).toContain("NPM-based upgrade/install is currently disabled");
+    expect(DIAGNOSTICS_SOURCE).toContain("raw.githubusercontent.com/qkal/charm/refs/heads/main/charm");
     expect(SERVER_SOURCE).toContain("buildUpgradeMessage");
   });
 });

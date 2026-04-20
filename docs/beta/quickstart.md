@@ -1,21 +1,18 @@
 # Charm Beta Quickstart
 
-This guide gets Charm from install to a validated first run in a few minutes.
+This guide gets Charm from prompt bootstrap to a validated first run in a few minutes.
 
-## 1) Install
+## 1) Bootstrap via prompt only
 
-### Global
+Use the bootstrap instruction:
 
-```bash
-npm install -g charm
+```text
+Fetch and follow instructions from https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm
 ```
 
-### Local repo
+Provider-specific prompts are also available at:
 
-```bash
-npm install
-npm run build
-```
+`https://raw.githubusercontent.com/qkal/charm/refs/heads/main/prompts/providers/<provider>.md`
 
 ## 2) Verify the environment
 
@@ -56,8 +53,8 @@ CHARM_SECURITY_MODE=strict charm doctor
 ## 5) Troubleshooting checklist
 
 1. `charm doctor`
-2. `charm upgrade`
-3. `npm rebuild better-sqlite3` (if SQLite native module issues appear)
+2. Re-run the bootstrap prompt instruction
+3. Restart the agent/IDE session
 
 ## Next docs
 

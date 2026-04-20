@@ -645,23 +645,22 @@ export default {
 
       api.registerCommand({
         name: "ctx-upgrade",
-        description: "Upgrade charm to the latest version",
+        description: "Show prompt-based Charm bootstrap instructions",
         handler: () => {
-          const bundlePath = resolve(_latestPluginRoot, "cli.bundle.mjs");
-          const fallbackPath = resolve(_latestPluginRoot, "build", "cli.js");
-          const cliPath = existsSync(bundlePath) ? bundlePath : fallbackPath;
-          const cmd = `node "${cliPath}" upgrade`;
+          const bootstrapUrl = "https://raw.githubusercontent.com/qkal/charm/refs/heads/main/charm";
           return {
             text: [
               "## ctx-upgrade",
               "",
-              "Run this command to upgrade charm:",
+              "NPM-based upgrade/install is currently disabled in this beta.",
               "",
-              "```",
-              cmd,
+              "Use prompt-based bootstrap:",
+              "",
+              "```text",
+              `Fetch and follow instructions from ${bootstrapUrl}`,
               "```",
               "",
-              "Restart your session after upgrade.",
+              "Restart your session after bootstrap.",
             ].join("\n"),
           };
         },
