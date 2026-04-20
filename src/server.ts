@@ -11,7 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { request as httpsRequest } from "node:https";
 import { z } from "zod";
 import { PolyglotExecutor } from "./executor.js";
-import { ContentStore, cleanupStaleDBs, cleanupStaleContentDBs, type SearchResult, type IndexResult } from "./store.js";
+import { ContentStore, cleanupStaleDBs, cleanupStaleContentDBs, type SearchResult } from "./store.js";
 import {
   detectRuntimes,
   getRuntimeSummary,
@@ -32,6 +32,7 @@ import { ExecutionService } from "./server/execution/execution-service.js";
 import type { ToolResult } from "./server/execution/contracts.js";
 import { createSearchToolHandler, searchInputSchema } from "./server/tools/search.js";
 import { batchExecuteInputSchema, createBatchExecuteToolHandler } from "./server/tools/batch-execute.js";
+import { createFetchAndIndexToolHandler, fetchAndIndexInputSchema } from "./server/tools/fetch-and-index.js";
 import type { ExecResult } from "./types.js";
 import { resolveSecurityMode } from "./security-mode.js";
 const __pkg_dir = dirname(fileURLToPath(import.meta.url));
@@ -1033,62 +1034,6 @@ function resolveGfmPluginPath(): string {
 // Tool: fetch_and_index
 // ─────────────────────────────────────────────────────────
 
-// Subprocess code that fetches a URL, detects Content-Type, and outputs a
-// __CM_CT__:<type> marker on the first line so the handler can route to the
-// appropriate indexing strategy.  HTML is converted to markdown via Turndown.
-function buildFetchCode(url: string, outputPath: string): string {
-  const turndownPath = JSON.stringify(resolveTurndownPath());
-  const gfmPath = JSON.stringify(resolveGfmPluginPath());
-  const escapedOutputPath = JSON.stringify(outputPath);
-  return `
-const TurndownService = require(${turndownPath});
-const { gfm } = require(${gfmPath});
-const fs = require('fs');
-const url = ${JSON.stringify(url)};
-const outputPath = ${escapedOutputPath};
-
-function emit(ct, content) {
-  // Write content to file to bypass executor stdout truncation (100KB limit).
-  // Only the content-type marker goes to stdout.
-  fs.writeFileSync(outputPath, content);
-  console.log('__CM_CT__:' + ct);
-}
-
-async function main() {
-  const resp = await fetch(url);
-  if (!resp.ok) { console.error("HTTP " + resp.status); process.exit(1); }
-  const contentType = resp.headers.get('content-type') || '';
-
-  // --- JSON responses ---
-  if (contentType.includes('application/json') || contentType.includes('+json')) {
-    const text = await resp.text();
-    try {
-      const pretty = JSON.stringify(JSON.parse(text), null, 2);
-      emit('json', pretty);
-    } catch {
-      emit('text', text);
-    }
-    return;
-  }
-
-  // --- HTML responses (default for text/html, application/xhtml+xml) ---
-  if (contentType.includes('text/html') || contentType.includes('application/xhtml')) {
-    const html = await resp.text();
-    const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
-    td.use(gfm);
-    td.remove(['script', 'style', 'nav', 'header', 'footer', 'noscript']);
-    emit('html', td.turndown(html));
-    return;
-  }
-
-  // --- Everything else: plain text, CSV, XML, etc. ---
-  const text = await resp.text();
-  emit('text', text);
-}
-main();
-`;
-}
-
 server.registerTool(
   "ctx_fetch_and_index",
   {
@@ -1098,150 +1043,23 @@ server.registerTool(
       "and returns a ~3KB preview. Full content stays in sandbox — use search() for deeper lookups.\n\n" +
       "Better than WebFetch: preview is immediate, full content is searchable, raw HTML never enters context.\n\n" +
       "Content-type aware: HTML is converted to markdown, JSON is chunked by key paths, plain text is indexed directly.",
-    inputSchema: z.object({
-      url: z.string().describe("The URL to fetch and index"),
-      source: z
-        .string()
-        .optional()
-        .describe(
-          "Label for the indexed content (e.g., 'React useEffect docs', 'Supabase Auth API')",
-        ),
-      force: z
-        .boolean()
-        .optional()
-        .describe("Skip cache and re-fetch even if content was recently indexed"),
-    }),
+    inputSchema: fetchAndIndexInputSchema,
   },
-  async ({ url, source, force }) => {
-    // TTL cache: if source was indexed within 24h, return cached hint
-    if (!force) {
-      const store = getStore();
-      const label = source ?? url;
-      const meta = store.getSourceMeta(label);
-      if (meta) {
-        const indexedAt = new Date(meta.indexedAt + "Z"); // SQLite datetime is UTC without Z
-        const ageMs = Date.now() - indexedAt.getTime();
-        const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-        if (ageMs < TTL_MS) {
-          const ageHours = Math.floor(ageMs / (60 * 60 * 1000));
-          const ageMin = Math.floor(ageMs / (60 * 1000));
-          const ageStr = ageHours > 0 ? `${ageHours}h ago` : ageMin > 0 ? `${ageMin}m ago` : "just now";
-          // Track cache savings — estimate ~1.6KB per chunk (average indexed content size)
-          const estimatedBytes = meta.chunkCount * 1600;
-          sessionStats.cacheHits++;
-          sessionStats.cacheBytesSaved += estimatedBytes;
-
-          return trackResponse("ctx_fetch_and_index", {
-            content: [{
-              type: "text" as const,
-              text: `Cached: **${meta.label}** — ${meta.chunkCount} sections, indexed ${ageStr} (fresh, TTL: 24h).\nTo refresh: call ctx_fetch_and_index again with \`force: true\`.\n\nYou MUST call search() to answer questions about this content — this cached response contains no content.\nUse: search(queries: [...], source: "${meta.label}")`,
-            }],
-          });
-        }
-        // Stale (>24h) — fall through to re-fetch silently
-      }
-    }
-    // Generate a unique temp file path for the subprocess to write fetched content.
-    // This bypasses the executor's 100KB stdout truncation — content goes file→handler directly.
-    const outputPath = join(tmpdir(), `ctx-fetch-${Date.now()}-${Math.random().toString(36).slice(2)}.dat`);
-
-    try {
-      const fetchCode = buildFetchCode(url, outputPath);
-      const result = await executor.execute({
-        language: "javascript",
-        code: fetchCode,
-        timeout: 30_000,
-      });
-
-      if (result.exitCode !== 0) {
-        return trackResponse("ctx_fetch_and_index", {
-          content: [
-            {
-              type: "text" as const,
-              text: `Failed to fetch ${url}: ${result.stderr || result.stdout}`,
-            },
-          ],
-          isError: true,
-        });
-      }
-
-      // Parse content-type marker from stdout (content is in the temp file)
-      const store = getStore();
-      const header = (result.stdout || "").trim();
-
-      // Read full content from temp file
-      let markdown: string;
-      try {
-        markdown = readFileSync(outputPath, "utf-8").trim();
-      } catch {
-        return trackResponse("ctx_fetch_and_index", {
-          content: [
-            {
-              type: "text" as const,
-              text: `Fetched ${url} but could not read subprocess output`,
-            },
-          ],
-          isError: true,
-        });
-      }
-
-      if (markdown.length === 0) {
-        return trackResponse("ctx_fetch_and_index", {
-          content: [
-            {
-              type: "text" as const,
-              text: `Fetched ${url} but got empty content`,
-            },
-          ],
-          isError: true,
-        });
-      }
-
-      trackIndexed(Buffer.byteLength(markdown));
-
-      // Route to the appropriate indexing strategy based on Content-Type
-      let indexed: IndexResult;
-      if (header === "__CM_CT__:json") {
-        indexed = store.indexJSON(markdown, source ?? url);
-      } else if (header === "__CM_CT__:text") {
-        indexed = store.indexPlainText(markdown, source ?? url);
-      } else {
-        // HTML (default) — content is already converted to markdown
-        indexed = store.index({ content: markdown, source: source ?? url });
-      }
-
-      // Build preview — first ~3KB of markdown for immediate use
-      const PREVIEW_LIMIT = 3072;
-      const preview = markdown.length > PREVIEW_LIMIT
-        ? markdown.slice(0, PREVIEW_LIMIT) + "\n\n…[truncated — use search() for full content]"
-        : markdown;
-      const totalKB = (Buffer.byteLength(markdown) / 1024).toFixed(1);
-
-      const text = [
-        `Fetched and indexed **${indexed.totalChunks} sections** (${totalKB}KB) from: ${indexed.label}`,
-        `Full content indexed in sandbox — use search(queries: [...], source: "${indexed.label}") for specific lookups.`,
-        "",
-        "---",
-        "",
-        preview,
-      ].join("\n");
-
-      return trackResponse("ctx_fetch_and_index", {
-        content: [{ type: "text" as const, text }],
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      return trackResponse("ctx_fetch_and_index", {
-        content: [
-          { type: "text" as const, text: `Fetch error: ${message}` },
-        ],
-        isError: true,
-      });
-    } finally {
-      // Clean up temp file
-      try { rmSync(outputPath); } catch { /* already gone */ }
-    }
-  },
+  createFetchAndIndexToolHandler({
+    getStore,
+    trackResponse,
+    trackIndexed,
+    executorExecute: ({ language, code, timeout }) =>
+      executor.execute({ language, code, timeout }),
+    resolveTurndownPath,
+    resolveGfmPluginPath,
+    readTempOutput: (path) => readFileSync(path, "utf-8"),
+    removeTempOutput: (path) => rmSync(path),
+    onCacheHit: (estimatedBytes) => {
+      sessionStats.cacheHits++;
+      sessionStats.cacheBytesSaved += estimatedBytes;
+    },
+  }),
 );
 
 // ─────────────────────────────────────────────────────────
